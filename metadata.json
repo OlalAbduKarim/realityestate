@@ -1,0 +1,6 @@
+{
+  "name": "Reality Estates",
+  "description": "Uganda's premier real-estate discovery and listing marketplace for verified homes, apartments, land, and commercial properties.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
