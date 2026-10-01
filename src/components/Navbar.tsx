@@ -3,7 +3,6 @@ import { useApp } from '../context/AppContext';
 import { DEMO_USERS } from '../data/mockProperties';
 import { 
   Building2, 
-  User as UserIcon, 
   LogOut, 
   ShieldCheck, 
   PlusCircle, 
@@ -47,7 +46,7 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-18">
           
-          {/* Zone 1: Single text element wordmark as per Top Bar Contract */}
+          {/* Zone 1: Single text element wordmark */}
           <div className="flex items-center gap-2">
             <button 
               onClick={() => handleNavClick('/')}
@@ -59,7 +58,7 @@ export const Navbar: React.FC = () => {
             </button>
           </div>
 
-          {/* Zone 2: 4-6 clean text navigation links with subtle hover underlines */}
+          {/* Zone 2: Clean text navigation links */}
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-stone-600 dark:text-stone-300">
             <button 
               onClick={() => handleNavClick('/search', { transaction: 'buy' })}
@@ -87,17 +86,9 @@ export const Navbar: React.FC = () => {
             >
               Land
             </button>
-            <button 
-              onClick={() => handleNavClick('/financing')}
-              className={`hover:text-stone-900 dark:hover:text-white transition-colors py-1 ${
-                currentPath === '/financing' ? 'text-stone-900 dark:text-white font-semibold' : ''
-              }`}
-            >
-              Financing
-            </button>
           </nav>
 
-          {/* Zone 3: 1-2 primary actions + theme toggle */}
+          {/* Zone 3: Primary actions + theme toggle */}
           <div className="flex items-center gap-2 sm:gap-3">
             
             {/* Dark / Light Mode Toggle Button */}
@@ -125,16 +116,16 @@ export const Navbar: React.FC = () => {
             </button>
 
             {/* Saved properties count shortcut */}
-            {currentUser && (
-              <button
-                onClick={() => handleNavClick('/dashboard')}
-                title="Saved Properties"
-                className="hidden lg:flex items-center gap-1.5 p-2 text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white hover:bg-stone-50 dark:hover:bg-stone-800 rounded-lg transition-colors"
-              >
-                <Heart className="w-4 h-4" />
-                <span className="text-xs font-semibold text-stone-700 dark:text-stone-200 tabular-nums">{savedPropertyIds.length}</span>
-              </button>
-            )}
+            <button
+              onClick={() => handleNavClick('/dashboard')}
+              title={`Saved Properties (${savedPropertyIds.length})`}
+              className="flex items-center gap-1.5 p-2 text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white hover:bg-stone-50 dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+            >
+              <Heart className={`w-4 h-4 ${savedPropertyIds.length > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
+              <span className="text-xs font-semibold text-stone-700 dark:text-stone-200 tabular-nums">
+                {savedPropertyIds.length}
+              </span>
+            </button>
 
             {/* Auth / Account State */}
             {currentUser ? (
@@ -218,7 +209,7 @@ export const Navbar: React.FC = () => {
               </div>
             )}
 
-            {/* Quick Demo Role Switcher for rapid review by evaluator */}
+            {/* Quick Demo Role Switcher for rapid evaluator testing */}
             <div className="hidden xl:flex items-center gap-1 pl-2 border-l border-stone-200 dark:border-stone-700">
               <span className="text-[10px] text-stone-400 dark:text-stone-500 font-medium uppercase tracking-wider">Demo:</span>
               <button
@@ -238,7 +229,7 @@ export const Navbar: React.FC = () => {
               <button
                 onClick={() => loginAs(DEMO_USERS[2])}
                 className="px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded font-medium transition-colors"
-                title="Switch to Admin Verification Persona"
+                title="Switch to Admin Persona"
               >
                 Admin
               </button>
@@ -288,12 +279,6 @@ export const Navbar: React.FC = () => {
           </div>
 
           <div className="space-y-1">
-            <button
-              onClick={() => handleNavClick('/financing')}
-              className="w-full text-left py-2 text-sm text-stone-700 dark:text-stone-300 font-medium"
-            >
-              Partner Financing & Mortgages
-            </button>
             <button
               onClick={() => handleNavClick('/list-property')}
               className="w-full text-left py-2 text-sm text-stone-700 dark:text-stone-300 font-medium"

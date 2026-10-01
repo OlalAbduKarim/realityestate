@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { PropertyType } from '../types/property';
-import { Search, SlidersHorizontal, MapPin, Building } from 'lucide-react';
+import { Search, SlidersHorizontal, MapPin, Building, X } from 'lucide-react';
+import { UGANDAN_REGIONS, POPULAR_NEIGHBORHOODS } from '../data/ugandaLocations';
 
 interface SearchBarProps {
   onOpenAdvancedFilters?: () => void;
@@ -14,25 +14,13 @@ export const SearchBar: React.FC<SearchBarProps> = ({
 }) => {
   const { filters, setFilters, navigateTo } = useApp();
 
-  const LOCATIONS = [
-    'All Locations',
-    'Kampala',
-    'Wakiso',
-    'Kololo',
-    'Naguru',
-    'Kira',
-    'Ntinda',
-    'Muyenga',
-    'Lubowa',
-    'Najjera',
-    'Entebbe',
-    'Mukono',
-    'Jinja'
-  ];
-
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     navigateTo('/search');
+  };
+
+  const handleClearNeighborhood = () => {
+    setFilters({ location: '' });
   };
 
   return (
@@ -76,24 +64,65 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       </div>
 
       {/* Main Search Controls Grid */}
-      <form onSubmit={handleSearchSubmit} className="pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <form onSubmit={handleSearchSubmit} className="pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         
-        {/* Location Dropdown */}
+        {/* 1. District Dropdown (All Ugandan Districts) */}
         <div className="space-y-1">
-          <label className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider block">
-            Location / Area
+          <label className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider flex items-center justify-between">
+            <span>District</span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal">All 136</span>
           </label>
           <div className="relative">
-            <MapPin className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3 pointer-events-none" />
+            <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 absolute left-3 top-3 pointer-events-none" />
             <select
-              value={filters.location}
-              onChange={e => setFilters({ location: e.target.value })}
-              className="w-full pl-9 pr-3 py-2 text-xs font-medium border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 bg-stone-50/50 dark:bg-stone-800 dark:text-stone-100 appearance-none"
+              value={filters.district || 'All Districts'}
+              onChange={e => setFilters({ district: e.target.value })}
+              className="w-full pl-9 pr-3 py-2 text-xs font-medium border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 bg-stone-50/50 dark:bg-stone-800 dark:text-stone-100 cursor-pointer"
             >
-              {LOCATIONS.map(loc => (
-                <option key={loc} value={loc} className="dark:bg-stone-800">{loc}</option>
+              <option value="All Districts" className="font-semibold">All Districts (Uganda)</option>
+              {UGANDAN_REGIONS.map(region => (
+                <optgroup key={region.name} label={`── ${region.name} ──`}>
+                  {region.districts.map(dist => (
+                    <option key={dist} value={dist} className="dark:bg-stone-800">
+                      {dist}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+          </div>
+        </div>
+
+        {/* 2. Neighborhood Input (Type in freely) */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Neighborhood</span>
+            <span className="text-[10px] text-stone-400 font-normal">Type in</span>
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              list="search-bar-neighborhoods"
+              value={filters.location === 'All Locations' ? '' : filters.location}
+              onChange={e => setFilters({ location: e.target.value })}
+              placeholder="e.g. Kololo, Kira, Naguru..."
+              className="w-full pl-3 pr-8 py-2 text-xs font-medium border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 bg-stone-50/50 dark:bg-stone-800 dark:text-stone-100 placeholder:text-stone-400"
+            />
+            {filters.location && filters.location !== 'All Locations' && (
+              <button
+                type="button"
+                onClick={handleClearNeighborhood}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+                title="Clear neighborhood"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <datalist id="search-bar-neighborhoods">
+              {POPULAR_NEIGHBORHOODS.map(nh => (
+                <option key={nh} value={nh} />
+              ))}
+            </datalist>
           </div>
         </div>
 

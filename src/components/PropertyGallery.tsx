@@ -21,15 +21,14 @@ interface PropertyGalleryProps {
 export const PropertyGallery: React.FC<PropertyGalleryProps> = ({
   images,
   title,
-  floorPlanUrl,
-  videoUrl
+  floorPlanUrl
 }) => {
   const [activeTab, setActiveTab] = useState<'photos' | 'floorplan' | 'video'>('photos');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
 
-  const displayImages = images.length > 0 ? images : ['/placeholder.jpg'];
+  const displayImages = images.length > 0 ? images : ['https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80'];
 
   const handleNext = () => {
     setCurrentIndex(prev => (prev + 1) % displayImages.length);

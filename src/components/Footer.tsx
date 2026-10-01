@@ -142,11 +142,6 @@ export const Footer: React.FC = () => {
                 </button>
               </li>
               <li>
-                <button onClick={() => navigateTo('/financing')} className="hover:text-white transition-colors">
-                  Mortgage Financing
-                </button>
-              </li>
-              <li>
                 <button onClick={() => navigateTo('/admin')} className="hover:text-white transition-colors text-xs text-stone-500">
                   Operations Console
                 </button>

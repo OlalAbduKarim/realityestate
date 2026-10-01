@@ -36,13 +36,7 @@ export const MobileNav: React.FC = () => {
 
         {/* Saved */}
         <button
-          onClick={() => {
-            if (currentUser) {
-              navigateTo('/dashboard');
-            } else {
-              openAuthModal('Sign in to view your saved properties and compare listings.');
-            }
-          }}
+          onClick={() => navigateTo('/dashboard')}
           className={`flex flex-col items-center justify-center py-1 px-2 min-w-[56px] relative transition-colors ${
             currentPath === '/dashboard' ? 'text-stone-900 dark:text-white font-semibold' : 'text-stone-500 dark:text-stone-400'
           }`}

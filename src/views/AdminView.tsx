@@ -6,53 +6,68 @@ import {
   ShieldCheck, 
   CheckCircle2, 
   Clock, 
-  ChevronRight,
-  X
+  Layers, 
+  Search, 
+  User as UserIcon, 
+  Eye, 
+  AlertCircle, 
+  ArrowRight, 
+  FileText, 
+  DollarSign, 
+  Check, 
+  X,
+  Sparkles
 } from 'lucide-react';
+import { DEMO_USERS } from '../data/mockProperties';
 
 export const AdminView: React.FC = () => {
   const { 
+    currentUser, 
+    loginAs, 
     properties, 
     updatePropertyVerification, 
-    enquiries, 
-    updateEnquiryStatus, 
-    viewingRequests, 
     transactions, 
-    updateTransactionStage
+    updateTransactionStage,
+    enquiries,
+    updateEnquiryStatus,
+    navigateTo 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'verification' | 'pipeline' | 'revenue' | 'enquiries'>('verification');
-  const [reviewingProperty, setReviewingProperty] = useState<Property | null>(null);
-  const [adminNote, setAdminNote] = useState('');
+  const [activeTab, setActiveTab] = useState<'verification' | 'crm' | 'revenue' | 'enquiries'>('verification');
+  const [inspectingProperty, setInspectingProperty] = useState<Property | null>(null);
 
-  // Checklist state for active review
-  const [checkId, setCheckId] = useState(true);
+  // Verification modal checklist states
+  const [checkAdvertiser, setCheckAdvertiser] = useState(true);
   const [checkLocation, setCheckLocation] = useState(true);
   const [checkPrice, setCheckPrice] = useState(true);
   const [checkAvailability, setCheckAvailability] = useState(true);
+  const [adminNotes, setAdminNotes] = useState('');
 
-  // Platform KPIs
-  const totalProperties = properties.length;
-  const verifiedPropertiesCount = properties.filter(p => p.verificationStatus === 'verified').length;
-  const pendingVerificationProperties = properties.filter(p => p.verificationStatus === 'pending');
-  const publishedPropertiesCount = properties.filter(p => p.listingStatus === 'published').length;
-  const totalViewingRequests = viewingRequests.length;
-  const totalPlatformRevenue = transactions.reduce((acc, t) => acc + (t.paymentStatus === 'Received' ? t.platformRevenue : 0), 0);
-  const pipelineValue = transactions.reduce((acc, t) => acc + t.transactionValue, 0);
+  const isAdmin = currentUser?.role === 'admin';
 
-  const handleApprove = (propertyId: string) => {
-    updatePropertyVerification(propertyId, 'verified', adminNote || 'Approved after physical boundary and owner mandate check.');
-    setReviewingProperty(null);
-    setAdminNote('');
+  const pendingProperties = properties.filter(p => p.verificationStatus === 'pending' || p.verificationStatus === 'unverified');
+  const verifiedProperties = properties.filter(p => p.verificationStatus === 'verified');
+
+  const openInspector = (prop: Property) => {
+    setInspectingProperty(prop);
+    setCheckAdvertiser(prop.verificationDetails?.advertiserVerified ?? true);
+    setCheckLocation(prop.verificationDetails?.locationConfirmed ?? true);
+    setCheckPrice(prop.verificationDetails?.priceConfirmed ?? true);
+    setCheckAvailability(prop.verificationDetails?.availabilityConfirmed ?? true);
+    setAdminNotes(prop.verificationDetails?.notes || '');
   };
 
-  const handleReject = (propertyId: string) => {
-    updatePropertyVerification(propertyId, 'unverified', adminNote || 'Rejected due to incomplete cadastral documentation.');
-    setReviewingProperty(null);
-    setAdminNote('');
+  const handleApproveVerification = (propertyId: string) => {
+    updatePropertyVerification(propertyId, 'verified', adminNotes || 'Cadastral coordinates and legal mandate verified by Admin Desk.');
+    setInspectingProperty(null);
   };
 
-  const PIPELINE_STAGES: TransactionRecord['stage'][] = [
+  const handleRejectVerification = (propertyId: string) => {
+    updatePropertyVerification(propertyId, 'unverified', adminNotes || 'Required title documentation or coordinates missing.');
+    setInspectingProperty(null);
+  };
+
+  const CRM_STAGES: TransactionRecord['stage'][] = [
     'Enquiry',
     'Contacted',
     'Viewing',
@@ -61,198 +76,149 @@ export const AdminView: React.FC = () => {
     'Closed'
   ];
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 transition-colors">
-      
-      {/* Admin Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
+  if (!isAdmin) {
+    const adminUser = DEMO_USERS.find(u => u.role === 'admin') || DEMO_USERS[3];
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-16 h-16 rounded-2xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 flex items-center justify-center mx-auto shadow-sm">
+          <ShieldCheck className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+        </div>
         <div>
-          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-md mb-2">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Platform Administration & Verification Unit</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 dark:text-white tracking-tight">
-            Operations & Compliance Control
-          </h1>
-          <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            Review supplier submissions, enforce anti-fraud checks, track CRM pipeline, and monitor marketplace revenue.
+          <h2 className="text-2xl font-serif font-bold text-stone-900 dark:text-white">
+            Admin Verification & CRM Console
+          </h2>
+          <p className="text-xs text-stone-600 dark:text-stone-400 mt-2 leading-relaxed">
+            This module is reserved for Reality Estates verification officers and marketplace admins to approve listing badges, manage the transaction pipeline, and audit enquiries.
           </p>
         </div>
+        <div className="pt-2">
+          <button
+            onClick={() => loginAs(adminUser)}
+            className="py-3 px-6 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            Switch to Admin Demo Account ({adminUser.name})
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-        {/* View toggles */}
-        <div className="flex rounded-lg bg-stone-100 dark:bg-stone-800 p-1 flex-wrap gap-1">
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      
+      {/* Header */}
+      <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 border border-stone-200/90 dark:border-stone-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 flex items-center justify-center">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-serif font-bold text-stone-900 dark:text-white">
+              Admin & Verification Console
+            </h1>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Logged in as {currentUser?.name} • Pearl Prime National Desk
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Tabs */}
+        <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl">
           <button
             onClick={() => setActiveTab('verification')}
-            className={`py-2 px-3 text-xs font-semibold rounded-md transition-colors ${
-              activeTab === 'verification' 
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              activeTab === 'verification'
+                ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
                 : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            Verification Queue ({pendingVerificationProperties.length})
+            Verification Queue ({pendingProperties.length})
           </button>
           <button
-            onClick={() => setActiveTab('pipeline')}
-            className={`py-2 px-3 text-xs font-semibold rounded-md transition-colors ${
-              activeTab === 'pipeline' 
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
+            onClick={() => setActiveTab('crm')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              activeTab === 'crm'
+                ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
                 : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            Transaction CRM
-          </button>
-          <button
-            onClick={() => setActiveTab('revenue')}
-            className={`py-2 px-3 text-xs font-semibold rounded-md transition-colors ${
-              activeTab === 'revenue' 
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            Revenue Tracking
+            Transaction CRM ({transactions.length})
           </button>
           <button
             onClick={() => setActiveTab('enquiries')}
-            className={`py-2 px-3 text-xs font-semibold rounded-md transition-colors ${
-              activeTab === 'enquiries' 
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              activeTab === 'enquiries'
+                ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
                 : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            Enquiries ({enquiries.length})
+            Inquiry Audit ({enquiries.length})
           </button>
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-        <div className="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 block">Total Properties</span>
-          <span className="text-xl font-bold text-stone-900 dark:text-white tabular-nums mt-1 block">{totalProperties}</span>
-          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 block">{publishedPropertiesCount} published</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 block">Pending Review</span>
-          <span className="text-xl font-bold text-amber-600 dark:text-amber-400 tabular-nums mt-1 block">{pendingVerificationProperties.length}</span>
-          <span className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 block">Awaiting inspection</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 block">Verified Badge</span>
-          <span className="text-xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums mt-1 block">{verifiedPropertiesCount}</span>
-          <span className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 block">{(verifiedPropertiesCount / totalProperties * 100).toFixed(0)}% verified ratio</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 block">Client Viewings</span>
-          <span className="text-xl font-bold text-stone-900 dark:text-white tabular-nums mt-1 block">{totalViewingRequests}</span>
-          <span className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 block">Scheduled walk-throughs</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 block">Pipeline Value</span>
-          <span className="text-xl font-bold text-stone-900 dark:text-white tabular-nums mt-1 block">{formatUGX(pipelineValue, true)}</span>
-          <span className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 block">Active transactions</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 block">Received Revenue</span>
-          <span className="text-xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums mt-1 block">{formatUGX(totalPlatformRevenue, true)}</span>
-          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 block">Commission ledger</span>
-        </div>
-      </div>
-
-      {/* Tab 1: Verification Queue */}
+      {/* TAB 1: VERIFICATION QUEUE */}
       {activeTab === 'verification' && (
-        <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-xs space-y-6 transition-colors">
-          <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-stone-800">
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
                 Pending Verification Queue
               </h2>
               <p className="text-xs text-stone-500 dark:text-stone-400">
-                Properties submitted by owners and agents requiring cadastral and physical check prior to verification.
+                Inspect advertised listings to certify coordinates, ownership mandate, and market price sanity.
               </p>
             </div>
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              {verifiedProperties.length} Properties Currently Certified
+            </span>
           </div>
 
-          {pendingVerificationProperties.length === 0 ? (
-            <div className="py-12 text-center text-stone-400 dark:text-stone-500 text-xs">
-              <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
-              All submitted listings have been processed by the verification desk.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 font-semibold uppercase">
-                    <th className="py-3 px-3">Property</th>
-                    <th className="py-3 px-3">Advertiser</th>
-                    <th className="py-3 px-3">Location</th>
-                    <th className="py-3 px-3">Asking Price</th>
-                    <th className="py-3 px-3">Submitted</th>
-                    <th className="py-3 px-3 text-right">Verification Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {pendingVerificationProperties.map(prop => (
-                    <tr key={prop.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/50 transition-colors">
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-stone-100 dark:bg-stone-800 overflow-hidden shrink-0">
-                            <img src={prop.images[0]} alt={prop.title} className="w-full h-full object-cover" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-stone-900 dark:text-white">{prop.title}</p>
-                            <p className="text-[11px] text-stone-400 dark:text-stone-500">{prop.propertyType} · {prop.transaction === 'buy' ? 'Sale' : 'Rent'}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <p className="font-semibold text-stone-800 dark:text-stone-200">{prop.advertiser.name}</p>
-                        <p className="text-[11px] text-stone-400 dark:text-stone-500">{prop.advertiser.phone}</p>
-                      </td>
-                      <td className="py-3 px-3 text-stone-700 dark:text-stone-300">{prop.location}, {prop.district}</td>
-                      <td className="py-3 px-3 font-bold text-stone-900 dark:text-white tabular-nums">
-                        {formatUGX(prop.price, true)}
-                      </td>
-                      <td className="py-3 px-3 text-stone-400 dark:text-stone-500 tabular-nums">{prop.dateAdded}</td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setReviewingProperty(prop);
-                              setAdminNote(prop.verificationDetails.notes || '');
-                            }}
-                            className="py-1.5 px-3 rounded-lg bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 font-semibold transition-colors"
-                          >
-                            Review & Inspect
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Quick Review of already verified properties for admin auditing */}
-          <div className="pt-6 border-t border-stone-100 dark:border-stone-800">
-            <h3 className="text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-3">
-              Sample of Active Verified Listings:
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              {properties.filter(p => p.verificationStatus === 'verified').slice(0, 3).map(p => (
-                <div key={p.id} className="p-3 bg-stone-50 dark:bg-stone-800 rounded-lg flex items-center justify-between">
-                  <div className="truncate pr-2">
-                    <p className="font-semibold text-stone-900 dark:text-white truncate">{p.title}</p>
-                    <p className="text-[11px] text-stone-500 dark:text-stone-400">{p.location} · {formatUGX(p.price, true)}</p>
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 overflow-hidden shadow-xs">
+            <div className="divide-y divide-stone-100 dark:divide-stone-800">
+              {properties.map(p => (
+                <div key={p.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <div className="flex items-start gap-4">
+                    <img 
+                      src={p.images[0] || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=400&q=80'} 
+                      alt={p.title} 
+                      className="w-16 h-16 rounded-xl object-cover shrink-0" 
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                          p.verificationStatus === 'verified' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
+                          p.verificationStatus === 'pending' ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300' :
+                          'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+                        }`}>
+                          {p.verificationStatus}
+                        </span>
+                        <span className="text-xs text-stone-500 dark:text-stone-400">{p.location}, {p.district}</span>
+                      </div>
+                      <h3 className="text-sm font-bold text-stone-900 dark:text-white mt-1">
+                        {p.title}
+                      </h3>
+                      <div className="text-xs text-stone-600 dark:text-stone-400 mt-0.5">
+                        {formatUGX(p.price)} • Rep: <strong>{p.advertiser.name}</strong> ({p.advertiser.phone})
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 font-bold px-1.5 py-0.5 rounded">
-                    Verified
-                  </span>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <button
+                      onClick={() => navigateTo(`/properties/${p.slug}`)}
+                      className="p-2 text-stone-500 hover:text-stone-900 dark:hover:text-white rounded-lg border border-stone-200 dark:border-stone-700"
+                      title="View public listing page"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => openInspector(p)}
+                      className="py-2 px-4 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-lg hover:bg-stone-800 dark:hover:bg-white"
+                    >
+                      Review & Inspect
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -260,58 +226,62 @@ export const AdminView: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 2: Transaction CRM Pipeline */}
-      {activeTab === 'pipeline' && (
-        <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-xs space-y-6 transition-colors">
-          <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-stone-800">
-            <div>
-              <h2 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
-                Transaction Pipeline Management
-              </h2>
-              <p className="text-xs text-stone-500 dark:text-stone-400">
-                Visual CRM tracking progression from initial inquiry through scheduled viewing, negotiations, to closed deal.
-              </p>
-            </div>
+      {/* TAB 2: TRANSACTION CRM KANBAN */}
+      {activeTab === 'crm' && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
+              6-Stage Transaction Pipeline (CRM)
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Track buyer inquiries from initial viewing to final tenure transfer and closure.
+            </p>
           </div>
 
-          {/* Pipeline Kanban Columns */}
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {PIPELINE_STAGES.map(stage => {
-              const stageTxs = transactions.filter(t => t.stage === stage);
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 overflow-x-auto pb-4">
+            {CRM_STAGES.map(stage => {
+              const stageDeals = transactions.filter(t => t.stage === stage);
               return (
-                <div key={stage} className="bg-stone-50 dark:bg-stone-850 rounded-xl p-3 border border-stone-200/80 dark:border-stone-800 space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-stone-200 dark:border-stone-700">
-                    <span className="text-xs font-bold text-stone-900 dark:text-white">{stage}</span>
-                    <span className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 bg-white dark:bg-stone-800 px-2 py-0.5 rounded-full border border-stone-200 dark:border-stone-700">
-                      {stageTxs.length}
+                <div key={stage} className="bg-white dark:bg-stone-900 rounded-2xl p-4 border border-stone-200/90 dark:border-stone-800 shadow-xs flex flex-col min-w-[220px]">
+                  <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800 mb-3">
+                    <h4 className="text-xs font-bold text-stone-900 dark:text-white truncate">
+                      {stage}
+                    </h4>
+                    <span className="w-5 h-5 rounded-full bg-stone-100 dark:bg-stone-800 text-[10px] font-bold text-stone-600 dark:text-stone-300 flex items-center justify-center">
+                      {stageDeals.length}
                     </span>
                   </div>
 
-                  <div className="space-y-2">
-                    {stageTxs.map(tx => (
-                      <div key={tx.id} className="bg-white dark:bg-stone-800 p-3 rounded-lg border border-stone-200 dark:border-stone-700 shadow-2xs space-y-2">
-                        <div>
-                          <p className="text-xs font-bold text-stone-900 dark:text-white line-clamp-1">{tx.propertyTitle}</p>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">{tx.customerName}</p>
+                  <div className="space-y-3 flex-1">
+                    {stageDeals.map(deal => (
+                      <div key={deal.id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/80 border border-stone-100 dark:border-stone-700/60 space-y-2 text-xs">
+                        <div className="font-bold text-stone-900 dark:text-white line-clamp-1">
+                          {deal.propertyTitle}
                         </div>
-                        <div className="flex items-center justify-between text-[11px] font-bold text-stone-900 dark:text-white tabular-nums">
-                          <span>{formatUGX(tx.transactionValue, true)}</span>
-                          <span className="text-emerald-700 dark:text-emerald-400">{tx.agreedCommissionPercent}% comm</span>
+                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                          {formatUGX(deal.transactionValue, true)}
                         </div>
-                        <div className="pt-1 border-t border-stone-100 dark:border-stone-700 flex items-center justify-between">
-                          <span className="text-[10px] text-stone-400 dark:text-stone-500">{tx.agentName}</span>
+                        <div className="text-[10px] text-stone-500">
+                          Client: <strong>{deal.customerName}</strong>
+                        </div>
+                        <div className="text-[10px] text-stone-500">
+                          Rep: {deal.agentName}
+                        </div>
+
+                        {/* Advance stage button */}
+                        <div className="pt-2 flex justify-between items-center border-t border-stone-200/60 dark:border-stone-700">
+                          <span className="text-[9px] text-stone-400">{deal.dateInitiated}</span>
                           {stage !== 'Closed' && (
                             <button
                               onClick={() => {
-                                const nextIndex = PIPELINE_STAGES.indexOf(stage) + 1;
-                                if (nextIndex < PIPELINE_STAGES.length) {
-                                  updateTransactionStage(tx.id, PIPELINE_STAGES[nextIndex]);
-                                }
+                                const currentIndex = CRM_STAGES.indexOf(stage);
+                                const nextStage = CRM_STAGES[currentIndex + 1];
+                                if (nextStage) updateTransactionStage(deal.id, nextStage);
                               }}
-                              className="text-[10px] font-bold text-stone-900 dark:text-stone-200 hover:underline flex items-center gap-0.5"
+                              className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-0.5 cursor-pointer"
                             >
-                              <span>Next</span>
-                              <ChevronRight className="w-3 h-3" />
+                              <span>Advance</span>
+                              <ArrowRight className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -325,220 +295,183 @@ export const AdminView: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 3: Revenue Tracking */}
-      {activeTab === 'revenue' && (
-        <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-xs space-y-6 transition-colors">
-          <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-stone-800">
-            <div>
-              <h2 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
-                Internal Marketplace Revenue Tracking
-              </h2>
-              <p className="text-xs text-stone-500 dark:text-stone-400">
-                Platform commission accruals and settlement tracking. (Platform discovery fee tracking; does not process banking escrow).
-              </p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 font-semibold uppercase">
-                  <th className="py-3 px-3">Property</th>
-                  <th className="py-3 px-3">Customer</th>
-                  <th className="py-3 px-3">Transaction Type</th>
-                  <th className="py-3 px-3">Deal Value</th>
-                  <th className="py-3 px-3">Commission %</th>
-                  <th className="py-3 px-3">Platform Revenue</th>
-                  <th className="py-3 px-3">Payment Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                {transactions.map(t => (
-                  <tr key={t.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/50 transition-colors">
-                    <td className="py-3 px-3 font-bold text-stone-900 dark:text-white">{t.propertyTitle}</td>
-                    <td className="py-3 px-3 text-stone-700 dark:text-stone-300">{t.customerName}</td>
-                    <td className="py-3 px-3">
-                      <span className="uppercase text-[10px] font-bold text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-800 px-2 py-0.5 rounded">
-                        {t.transactionType}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 font-bold text-stone-900 dark:text-white tabular-nums">
-                      {formatUGX(t.transactionValue)}
-                    </td>
-                    <td className="py-3 px-3 text-stone-700 dark:text-stone-300 tabular-nums">{t.agreedCommissionPercent}%</td>
-                    <td className="py-3 px-3 font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                      {formatUGX(t.platformRevenue)}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`inline-block text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                        t.paymentStatus === 'Received' 
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' 
-                          : t.paymentStatus === 'Invoiced' 
-                            ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300' 
-                            : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                      }`}>
-                        {t.paymentStatus}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: Enquiries Management */}
+      {/* TAB 3: INQUIRY AUDIT */}
       {activeTab === 'enquiries' && (
-        <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-xs space-y-6 transition-colors">
-          <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-stone-800">
-            <div>
-              <h2 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
-                Customer Enquiries Management
-              </h2>
-              <p className="text-xs text-stone-500 dark:text-stone-400">
-                Monitor client inquiries submitted to suppliers and representatives across Uganda.
-              </p>
-            </div>
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
+              Platform Enquiries & Leads Ledger
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Audit client engagement, response status, and communications.
+            </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 font-semibold uppercase">
-                  <th className="py-3 px-3">Property</th>
-                  <th className="py-3 px-3">Customer</th>
-                  <th className="py-3 px-3">Phone</th>
-                  <th className="py-3 px-3">Date</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Assigned Representative</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                {enquiries.map(enq => (
-                  <tr key={enq.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/50 transition-colors">
-                    <td className="py-3 px-3 font-bold text-stone-900 dark:text-white">{enq.propertyTitle}</td>
-                    <td className="py-3 px-3 text-stone-800 dark:text-stone-200">{enq.customerName}</td>
-                    <td className="py-3 px-3 text-stone-600 dark:text-stone-400">{enq.customerPhone}</td>
-                    <td className="py-3 px-3 text-stone-400 dark:text-stone-500 tabular-nums">{enq.date}</td>
-                    <td className="py-3 px-3">
-                      <select
-                        value={enq.status}
-                        onChange={e => updateEnquiryStatus(enq.id, e.target.value as any)}
-                        className="py-1 px-2 text-xs border border-stone-200 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800 dark:text-stone-100 font-medium focus:outline-hidden"
-                      >
-                        <option value="New">New</option>
-                        <option value="Contacted">Contacted</option>
-                        <option value="Viewing Scheduled">Viewing Scheduled</option>
-                        <option value="Offer Made">Offer Made</option>
-                        <option value="Closed">Closed</option>
-                        <option value="Lost">Lost</option>
-                      </select>
-                    </td>
-                    <td className="py-3 px-3 text-stone-700 dark:text-stone-300">{enq.assignedRep}</td>
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/40">
+                    <th className="p-3.5 text-stone-500 dark:text-stone-400">Property</th>
+                    <th className="p-3.5 text-stone-500 dark:text-stone-400">Customer</th>
+                    <th className="p-3.5 text-stone-500 dark:text-stone-400">Date</th>
+                    <th className="p-3.5 text-stone-500 dark:text-stone-400">Message</th>
+                    <th className="p-3.5 text-stone-500 dark:text-stone-400">Status</th>
+                    <th className="p-3.5 text-stone-500 dark:text-stone-400">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                  {enquiries.map(e => (
+                    <tr key={e.id}>
+                      <td className="p-3.5 font-bold text-stone-900 dark:text-white min-w-[160px]">
+                        <div>{e.propertyTitle}</div>
+                        {e.subject && (
+                          <div className="text-[11px] font-normal text-stone-500 dark:text-stone-400">
+                            Subj: {e.subject}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-semibold text-stone-900 dark:text-white">{e.customerName}</div>
+                        <div className="text-[11px] text-stone-400">{e.customerPhone}</div>
+                      </td>
+                      <td className="p-3.5 text-stone-500">{e.date}</td>
+                      <td className="p-3.5 max-w-xs truncate text-stone-600 dark:text-stone-300 italic">
+                        "{e.message}"
+                      </td>
+                      <td className="p-3.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                          e.status === 'Contacted' || e.status === 'Viewing Scheduled' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
+                          e.status === 'Closed' ? 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300' :
+                          e.status === 'Lost' ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300' :
+                          'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                        }`}>
+                          {e.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        <select
+                          value={e.status}
+                          onChange={(evt) => updateEnquiryStatus(e.id, evt.target.value as any)}
+                          className="text-xs p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900"
+                        >
+                          <option value="New">New</option>
+                          <option value="Contacted">Contacted</option>
+                          <option value="Viewing Scheduled">Viewing Scheduled</option>
+                          <option value="Offer Made">Offer Made</option>
+                          <option value="Closed">Closed</option>
+                          <option value="Lost">Lost</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Property Review Modal */}
-      {reviewingProperty && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in"
-          onClick={() => setReviewingProperty(null)}
-        >
-          <div 
-            className="bg-white dark:bg-stone-900 rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-stone-100 dark:border-stone-800 relative animate-in zoom-in-95 max-h-[90vh] overflow-y-auto space-y-6 transition-colors"
-            onClick={e => e.stopPropagation()}
-          >
+      {/* Review & Inspect Modal */}
+      {inspectingProperty && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
-              <div>
-                <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">
-                  Compliance Inspection Review
-                </span>
-                <h3 className="text-xl font-serif font-bold text-stone-900 dark:text-white">
-                  {reviewingProperty.title}
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
+                  Inspect & Verify Listing
                 </h3>
               </div>
               <button
-                onClick={() => setReviewingProperty(null)}
-                className="p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-full transition-colors"
+                onClick={() => setInspectingProperty(null)}
+                className="p-1 text-stone-400 hover:text-stone-700 rounded-full"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Photo & Specs overview */}
-            <div className="flex gap-4">
-              <div className="w-32 h-24 rounded-lg bg-stone-100 dark:bg-stone-800 overflow-hidden shrink-0">
-                <img src={reviewingProperty.images[0]} alt={reviewingProperty.title} className="w-full h-full object-cover" />
-              </div>
-              <div className="space-y-1 text-xs text-stone-600 dark:text-stone-300">
-                <p><strong className="text-stone-900 dark:text-white">Advertiser:</strong> {reviewingProperty.advertiser.name} ({reviewingProperty.advertiser.type})</p>
-                <p><strong className="text-stone-900 dark:text-white">Phone:</strong> {reviewingProperty.advertiser.phone}</p>
-                <p><strong className="text-stone-900 dark:text-white">Location:</strong> {reviewingProperty.address}, {reviewingProperty.location}</p>
-                <p><strong className="text-stone-900 dark:text-white">Price:</strong> {formatUGX(reviewingProperty.price)}</p>
-              </div>
-            </div>
-
-            {/* Verification Checklist */}
-            <div className="space-y-3 bg-stone-50 dark:bg-stone-800 p-4 rounded-xl border border-stone-200 dark:border-stone-700">
-              <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 uppercase tracking-wider">
-                Verification Checklist (Field Inspector Sign-Off):
+            <div className="space-y-1 text-xs">
+              <h4 className="font-bold text-stone-900 dark:text-white text-sm">
+                {inspectingProperty.title}
               </h4>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-xs text-stone-800 dark:text-stone-300 cursor-pointer">
-                  <input type="checkbox" checked={checkId} onChange={e => setCheckId(e.target.checked)} className="rounded text-stone-900" />
-                  <span>1. Advertiser identity confirmed via National ID / Passport mandate</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-stone-800 dark:text-stone-300 cursor-pointer">
-                  <input type="checkbox" checked={checkLocation} onChange={e => setCheckLocation(e.target.checked)} className="rounded text-stone-900" />
-                  <span>2. Property location GPS and boundary stones inspected on-site</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-stone-800 dark:text-stone-300 cursor-pointer">
-                  <input type="checkbox" checked={checkPrice} onChange={e => setCheckPrice(e.target.checked)} className="rounded text-stone-900" />
-                  <span>3. Advertised price confirmed against owner authority to sell/lease</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-stone-800 dark:text-stone-300 cursor-pointer">
-                  <input type="checkbox" checked={checkAvailability} onChange={e => setCheckAvailability(e.target.checked)} className="rounded text-stone-900" />
-                  <span>4. Property is physically available with no competing active lock</span>
-                </label>
-              </div>
+              <p className="text-stone-500">
+                {inspectingProperty.location}, {inspectingProperty.district} • {formatUGX(inspectingProperty.price)}
+              </p>
+              <p className="text-stone-500">
+                GPS: {inspectingProperty.coordinates.lat}, {inspectingProperty.coordinates.lng}
+              </p>
             </div>
 
-            {/* Admin Notes */}
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                Field Inspection Notes / Public Dossier Remarks:
+            {/* Checklist */}
+            <div className="space-y-2 text-xs">
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-stone-200 dark:border-stone-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkAdvertiser}
+                  onChange={(e) => setCheckAdvertiser(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                <span>Advertiser Identity & Power of Attorney / Mandate Checked</span>
               </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-stone-200 dark:border-stone-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkLocation}
+                  onChange={(e) => setCheckLocation(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                <span>Physical Site Location & Boundary Coordinates Confirmed</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-stone-200 dark:border-stone-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkPrice}
+                  onChange={(e) => setCheckPrice(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                <span>Price & Valuation Verified Against Land Registry Benchmarks</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-2.5 rounded-lg border border-stone-200 dark:border-stone-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkAvailability}
+                  onChange={(e) => setCheckAvailability(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                <span>Availability Confirmed with Listing Representative</span>
+              </label>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">Admin Sign-off Notes</label>
               <textarea
-                rows={3}
-                value={adminNote}
-                onChange={e => setAdminNote(e.target.value)}
-                placeholder="e.g. Visited Kira site; inspected boundary beacons. Paved access confirmed."
-                className="w-full p-3 text-xs border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
+                rows={2}
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                placeholder="Notes on title inspection, boundary survey, or reason for decline..."
+                className="w-full text-xs p-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
               />
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-100 dark:border-stone-800">
+            <div className="flex items-center justify-between pt-2">
               <button
                 type="button"
-                onClick={() => handleReject(reviewingProperty.id)}
-                className="py-2.5 px-4 rounded-lg border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-semibold transition-colors"
+                onClick={() => handleRejectVerification(inspectingProperty.id)}
+                className="py-2.5 px-4 rounded-xl border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 dark:hover:bg-rose-950/40"
               >
-                Reject Listing
+                Mark as Unverified
               </button>
+
               <button
                 type="button"
-                onClick={() => handleApprove(reviewingProperty.id)}
-                className="py-2.5 px-6 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition-colors shadow-xs flex items-center gap-1.5"
+                onClick={() => handleApproveVerification(inspectingProperty.id)}
+                className="py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs"
               >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Approve & Grant Verified Badge</span>
+                Approve & Grant Verified Badge
               </button>
             </div>
           </div>

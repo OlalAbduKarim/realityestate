@@ -5,7 +5,6 @@ import {
   ViewingRequest, 
   Enquiry, 
   TransactionRecord, 
-  FinancingEnquiry, 
   FilterState 
 } from '../types/property';
 import { 
@@ -70,16 +69,19 @@ interface AppContextType {
   ) => void;
   updateEnquiryStatus: (enquiryId: string, status: Enquiry['status']) => void;
 
-  // Transactions & Financing
+  // Transactions
   transactions: TransactionRecord[];
   updateTransactionStage: (txId: string, stage: TransactionRecord['stage']) => void;
-  financingEnquiries: FinancingEnquiry[];
-  submitFinancingEnquiry: (enquiry: Omit<FinancingEnquiry, 'id' | 'date' | 'status'>) => void;
 
   // Filters
   filters: FilterState;
   setFilters: (newFilters: Partial<FilterState>) => void;
   resetFilters: () => void;
+
+  // Contact Agent Modal
+  contactAgentProperty: Property | null;
+  openContactAgentModal: (property: Property) => void;
+  closeContactAgentModal: () => void;
 
   // Toast notifications
   toasts: Toast[];
@@ -90,7 +92,8 @@ interface AppContextType {
 export const DEFAULT_FILTERS: FilterState = {
   transaction: 'all',
   propertyType: 'all',
-  location: 'All Locations',
+  district: 'All Districts',
+  location: '',
   minPrice: 0,
   maxPrice: 3000000000,
   bedrooms: 'any',
@@ -134,8 +137,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Current user state (starts as null for anonymous browsing)
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('reality_estates_user');
-    return saved ? JSON.parse(saved) : null;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reality_estates_user');
+      return saved ? JSON.parse(saved) : null;
+    }
+    return null;
   });
 
   // Auth modal
@@ -163,135 +169,258 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const navigateTo = (path: string) => {
-    setCurrentPath(path);
-    if (typeof window !== 'undefined') {
+    if (path !== currentPath) {
       window.history.pushState({}, '', path);
+      setCurrentPath(path);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   // Properties state
   const [properties, setProperties] = useState<Property[]>(() => {
-    const saved = localStorage.getItem('reality_estates_properties');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return INITIAL_PROPERTIES;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reality_estates_properties');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // fallback
+        }
       }
     }
     return INITIAL_PROPERTIES;
   });
 
   useEffect(() => {
-    localStorage.setItem('reality_estates_properties', JSON.stringify(properties));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reality_estates_properties', JSON.stringify(properties));
+    }
   }, [properties]);
 
   // Saved / Favourites
   const [savedPropertyIds, setSavedPropertyIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('reality_estates_saved');
-    return saved ? JSON.parse(saved) : ['prop-1', 'prop-2'];
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reality_estates_saved');
+      return saved ? JSON.parse(saved) : ['prop-1'];
+    }
+    return ['prop-1'];
   });
 
   useEffect(() => {
-    localStorage.setItem('reality_estates_saved', JSON.stringify(savedPropertyIds));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reality_estates_saved', JSON.stringify(savedPropertyIds));
+    }
   }, [savedPropertyIds]);
+
+  const toggleSaveProperty = (propertyId: string) => {
+    setSavedPropertyIds(prev => {
+      const exists = prev.includes(propertyId);
+      if (exists) {
+        showToast('Property removed from saved listings', 'info');
+        return prev.filter(id => id !== propertyId);
+      } else {
+        showToast('Property added to saved listings', 'success');
+        return [...prev, propertyId];
+      }
+    });
+  };
+
+  const isPropertySaved = (propertyId: string) => savedPropertyIds.includes(propertyId);
 
   // Viewing Requests
   const [viewingRequests, setViewingRequests] = useState<ViewingRequest[]>(() => {
-    const saved = localStorage.getItem('reality_estates_viewings');
-    return saved ? JSON.parse(saved) : INITIAL_VIEWING_REQUESTS;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reality_estates_viewings');
+      return saved ? JSON.parse(saved) : INITIAL_VIEWING_REQUESTS;
+    }
+    return INITIAL_VIEWING_REQUESTS;
   });
 
   useEffect(() => {
-    localStorage.setItem('reality_estates_viewings', JSON.stringify(viewingRequests));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reality_estates_viewings', JSON.stringify(viewingRequests));
+    }
   }, [viewingRequests]);
+
+  const addViewingRequest = (
+    req: Omit<ViewingRequest, 'id' | 'dateRequested' | 'status' | 'assignedAgentName'>
+  ) => {
+    const newReq: ViewingRequest = {
+      ...req,
+      id: `view-${Date.now()}`,
+      status: 'Pending',
+      dateRequested: new Date().toISOString().split('T')[0],
+      assignedAgentName: 'Pearl Prime Verification Desk'
+    };
+    setViewingRequests(prev => [newReq, ...prev]);
+    showToast('Viewing request submitted successfully! Representative notified.', 'success');
+  };
+
+  const updateViewingStatus = (requestId: string, status: ViewingRequest['status']) => {
+    setViewingRequests(prev => prev.map(v => v.id === requestId ? { ...v, status } : v));
+    showToast(`Viewing request status updated to: ${status}`, 'info');
+  };
+
+  const cancelViewingRequest = (requestId: string) => {
+    updateViewingStatus(requestId, 'Cancelled');
+  };
 
   // Enquiries
   const [enquiries, setEnquiries] = useState<Enquiry[]>(() => {
-    const saved = localStorage.getItem('reality_estates_enquiries');
-    return saved ? JSON.parse(saved) : INITIAL_ENQUIRIES;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reality_estates_enquiries');
+      return saved ? JSON.parse(saved) : INITIAL_ENQUIRIES;
+    }
+    return INITIAL_ENQUIRIES;
   });
 
   useEffect(() => {
-    localStorage.setItem('reality_estates_enquiries', JSON.stringify(enquiries));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reality_estates_enquiries', JSON.stringify(enquiries));
+    }
   }, [enquiries]);
+
+  const addEnquiry = (enq: Omit<Enquiry, 'id' | 'date' | 'status' | 'assignedRep'>) => {
+    const newEnq: Enquiry = {
+      ...enq,
+      id: `enq-${Date.now()}`,
+      status: 'New',
+      date: new Date().toISOString().split('T')[0],
+      assignedRep: 'Grace Achieng'
+    };
+    setEnquiries(prev => [newEnq, ...prev]);
+    showToast('Enquiry sent directly to property representative.', 'success');
+  };
+
+  const updateEnquiryStatus = (enquiryId: string, status: Enquiry['status']) => {
+    setEnquiries(prev => prev.map(e => e.id === enquiryId ? { ...e, status } : e));
+    showToast(`Enquiry updated to: ${status}`, 'info');
+  };
 
   // Transactions
   const [transactions, setTransactions] = useState<TransactionRecord[]>(() => {
-    const saved = localStorage.getItem('reality_estates_transactions');
-    return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('reality_estates_transactions');
+      return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+    }
+    return INITIAL_TRANSACTIONS;
   });
 
-  useEffect(() => {
-    localStorage.setItem('reality_estates_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+  const updateTransactionStage = (txId: string, stage: TransactionRecord['stage']) => {
+    setTransactions(prev => prev.map(t => {
+      if (t.id === txId) {
+        return {
+          ...t,
+          stage,
+          dateClosed: stage === 'Closed' ? new Date().toISOString().split('T')[0] : t.dateClosed,
+          paymentStatus: stage === 'Closed' ? 'Received' : t.paymentStatus
+        };
+      }
+      return t;
+    }));
+    showToast(`Transaction advanced to: ${stage}`, 'success');
+  };
 
-  // Financing enquiries
-  const [financingEnquiries, setFinancingEnquiries] = useState<FinancingEnquiry[]>(() => {
-    const saved = localStorage.getItem('reality_estates_financing');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Add new property
+  const addProperty = (newPropData: Partial<Property>): Property => {
+    const title = newPropData.title || 'Newly Listed Ugandan Property';
+    const slug = `${slugify(title)}-${Date.now().toString().slice(-4)}`;
+    
+    const newProperty: Property = {
+      id: `prop-custom-${Date.now()}`,
+      slug,
+      title,
+      transaction: newPropData.transaction || 'buy',
+      propertyType: newPropData.propertyType || 'House',
+      price: newPropData.price || 500000000,
+      currency: 'UGX',
+      pricePeriod: newPropData.pricePeriod || (newPropData.transaction === 'rent' ? 'month' : 'total'),
+      location: newPropData.location || 'Kira',
+      district: newPropData.district || 'Wakiso',
+      address: newPropData.address || `${newPropData.location || 'Kira'}, Uganda`,
+      bedrooms: newPropData.bedrooms || 3,
+      bathrooms: newPropData.bathrooms || 2,
+      parking: newPropData.parking || 2,
+      landSizeDecimals: newPropData.landSizeDecimals,
+      buildingSizeSqm: newPropData.buildingSizeSqm,
+      tenure: newPropData.tenure || 'Mailo',
+      furnished: newPropData.furnished || false,
+      availability: 'Available',
+      verificationStatus: 'pending',
+      listingStatus: 'pending',
+      description: newPropData.description || 'Verified property listing submitted via Reality Estates.',
+      features: newPropData.features || ['Water Reservoir', 'Security', 'Perimeter Wall'],
+      images: newPropData.images && newPropData.images.length > 0 
+        ? newPropData.images 
+        : ['https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80'],
+      advertiser: newPropData.advertiser || {
+        id: currentUser?.id || 'owner-custom',
+        name: currentUser?.name || 'Property Owner',
+        type: (currentUser?.role === 'agent' ? 'Agent' : currentUser?.role === 'developer' ? 'Developer' : 'Owner') as any,
+        phone: currentUser?.phone || '+256 700 000 000',
+        whatsapp: currentUser?.phone ? currentUser.phone.replace(/\s+/g, '') : '+256700000000',
+        email: currentUser?.email || 'owner@example.ug',
+        agencyName: currentUser?.company,
+        verified: false,
+        responseRate: 'New listing'
+      },
+      verificationDetails: {
+        advertiserVerified: false,
+        locationConfirmed: false,
+        priceConfirmed: false,
+        availabilityConfirmed: false,
+        notes: 'Pending verification inspection by Reality Estates desk.'
+      },
+      coordinates: {
+        lat: 0.3476,
+        lng: 32.5825
+      },
+      featured: false,
+      dateAdded: new Date().toISOString().split('T')[0]
+    };
 
-  // Filters
+    setProperties(prev => [newProperty, ...prev]);
+    showToast('Listing submitted! Sent to verification queue for on-site inspection.', 'success');
+    return newProperty;
+  };
+
+  const updatePropertyVerification = (
+    propertyId: string, 
+    status: Property['verificationStatus'], 
+    notes?: string
+  ) => {
+    setProperties(prev => prev.map(p => {
+      if (p.id === propertyId) {
+        return {
+          ...p,
+          verificationStatus: status,
+          verificationDetails: {
+            ...p.verificationDetails,
+            advertiserVerified: status === 'verified',
+            locationConfirmed: status === 'verified',
+            priceConfirmed: status === 'verified',
+            availabilityConfirmed: status === 'verified',
+            verifiedAt: status === 'verified' ? new Date().toISOString().split('T')[0] : undefined,
+            notes: notes || p.verificationDetails.notes
+          }
+        };
+      }
+      return p;
+    }));
+    showToast(`Property verification status updated to: ${status}`, 'success');
+  };
+
+  // Filters state
   const [filters, setFiltersState] = useState<FilterState>(DEFAULT_FILTERS);
-
   const setFilters = (newFilters: Partial<FilterState>) => {
     setFiltersState(prev => ({ ...prev, ...newFilters }));
   };
-
   const resetFilters = () => {
     setFiltersState(DEFAULT_FILTERS);
+    showToast('Search filters reset', 'info');
   };
 
-  // Toasts
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const showToast = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts(prev => [...prev, { id, type, text }]);
-    setTimeout(() => {
-      dismissToast(id);
-    }, 4500);
-  };
-
-  const dismissToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-
-  // Authentication operations
-  const loginAs = (user: User) => {
-    setCurrentUser(user);
-    localStorage.setItem('reality_estates_user', JSON.stringify(user));
-    setIsAuthModalOpen(false);
-    showToast(`Signed in as ${user.name} (${user.role.toUpperCase()})`, 'success');
-    
-    // Execute pending action if any
-    if (pendingAuthAction) {
-      pendingAuthAction();
-      setPendingAuthAction(null);
-    }
-  };
-
-  const registerUser = (name: string, phone: string, email: string, role: User['role'] = 'buyer') => {
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      name,
-      phone,
-      email,
-      role,
-      title: role === 'agent' ? 'Registered Real Estate Agent' : 'Registered Client',
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    loginAs(newUser);
-  };
-
-  const logout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('reality_estates_user');
-    showToast('Signed out. You are now browsing anonymously.', 'info');
-  };
-
+  // Auth Modal trigger
   const openAuthModal = (message?: string, onSuccessAction?: () => void) => {
     if (message) setAuthModalMessage(message);
     if (onSuccessAction) setPendingAuthAction(() => onSuccessAction);
@@ -311,213 +440,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Property actions
-  const isPropertySaved = (propertyId: string) => savedPropertyIds.includes(propertyId);
-
-  const toggleSaveProperty = (propertyId: string) => {
-    requireAuth(() => {
-      setSavedPropertyIds(prev => {
-        const exists = prev.includes(propertyId);
-        if (exists) {
-          showToast('Property removed from your saved list', 'info');
-          return prev.filter(id => id !== propertyId);
-        } else {
-          showToast('Property saved to your dashboard', 'success');
-          return [...prev, propertyId];
-        }
-      });
-    }, 'Create a free account to save and compare your favourite properties.');
+  const loginAs = (user: User) => {
+    setCurrentUser(user);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('reality_estates_user', JSON.stringify(user));
+    }
+    setIsAuthModalOpen(false);
+    showToast(`Signed in as ${user.name} (${user.role.toUpperCase()})`, 'success');
+    
+    if (pendingAuthAction) {
+      pendingAuthAction();
+      setPendingAuthAction(null);
+    }
   };
 
-  const addProperty = (newProp: Partial<Property>): Property => {
-    const title = newProp.title || 'New Property Listing';
-    const slug = `${slugify(title)}-${Date.now().toString(36)}`;
-    const fullProp: Property = {
-      id: `prop-${Date.now()}`,
-      slug,
-      title,
-      transaction: newProp.transaction || 'buy',
-      propertyType: newProp.propertyType || 'House',
-      price: newProp.price || 500000000,
-      currency: 'UGX',
-      pricePeriod: newProp.pricePeriod || (newProp.transaction === 'rent' ? 'month' : 'total'),
-      location: newProp.location || 'Kampala',
-      district: newProp.district || 'Kampala',
-      address: newProp.address || 'Kampala Metropolitan Area',
-      bedrooms: newProp.bedrooms || 3,
-      bathrooms: newProp.bathrooms || 2,
-      parking: newProp.parking || 2,
-      landSizeDecimals: newProp.landSizeDecimals,
-      buildingSizeSqm: newProp.buildingSizeSqm,
-      tenure: newProp.tenure || 'Mailo',
-      furnished: !!newProp.furnished,
-      availability: 'Available',
-      verificationStatus: 'pending',
-      listingStatus: 'pending',
-      description: newProp.description || 'Modern property listing with excellent infrastructure access.',
-      features: newProp.features || ['Parking', 'Security', 'Water Reservoir'],
-      images: newProp.images && newProp.images.length > 0 ? newProp.images : [
-        INITIAL_PROPERTIES[0].images[0]
-      ],
-      advertiser: newProp.advertiser || {
-        id: currentUser?.id || 'adv-self',
-        name: currentUser?.name || 'Property Owner',
-        type: currentUser?.role === 'agent' ? 'Agent' : 'Owner',
-        phone: currentUser?.phone || '+256 700 000 000',
-        whatsapp: currentUser?.phone ? currentUser.phone.replace(/\s+/g, '') : '+256700000000',
-        email: currentUser?.email || 'advertiser@realityestates.ug',
-        verified: false,
-        agencyName: currentUser?.company || 'Direct Listing',
-        responseRate: 'New listing'
-      },
-      verificationDetails: {
-        advertiserVerified: false,
-        locationConfirmed: false,
-        priceConfirmed: false,
-        availabilityConfirmed: false,
-        notes: 'Submitted via portal. Verification team will review cadastral title copy and conduct verification checks.'
-      },
-      insights: {
-        estimatedMonthlyRent: newProp.transaction === 'rent' ? newProp.price : Math.round((newProp.price || 500000000) * 0.0055),
-        grossRentalYield: 6.6
-      },
-      coordinates: newProp.coordinates || { lat: 0.3476, lng: 32.5825 },
-      featured: false,
-      dateAdded: new Date().toISOString().split('T')[0]
+  const registerUser = (name: string, phone: string, email: string, role: User['role'] = 'buyer') => {
+    const newUser: User = {
+      id: `usr-${Date.now()}`,
+      name,
+      phone,
+      email,
+      role,
+      verifiedIdentity: true
     };
-
-    setProperties(prev => [fullProp, ...prev]);
-    showToast('Listing submitted successfully for review!', 'success');
-    return fullProp;
+    loginAs(newUser);
   };
 
-  const updatePropertyVerification = (
-    propertyId: string, 
-    status: Property['verificationStatus'], 
-    notes?: string
-  ) => {
-    setProperties(prev => prev.map(p => {
-      if (p.id === propertyId) {
-        const isVerified = status === 'verified';
-        return {
-          ...p,
-          verificationStatus: status,
-          listingStatus: isVerified ? 'published' : (status === 'unverified' ? 'rejected' : 'pending'),
-          verificationDetails: {
-            ...p.verificationDetails,
-            advertiserVerified: isVerified,
-            locationConfirmed: isVerified,
-            priceConfirmed: isVerified,
-            availabilityConfirmed: isVerified,
-            verifiedDate: isVerified ? new Date().toISOString().split('T')[0] : undefined,
-            verifiedBy: currentUser?.name || 'Reality Estates Operations Admin',
-            notes: notes || p.verificationDetails.notes
-          }
-        };
-      }
-      return p;
-    }));
-    showToast(`Property status updated to: ${status.toUpperCase()}`, 'success');
+  const logout = () => {
+    setCurrentUser(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('reality_estates_user');
+    }
+    showToast('You have signed out', 'info');
+    navigateTo('/');
   };
 
-  const addViewingRequest = (
-    req: Omit<ViewingRequest, 'id' | 'dateRequested' | 'status' | 'assignedAgentName'>
-  ) => {
-    const newRequest: ViewingRequest = {
-      ...req,
-      id: `view-${Date.now()}`,
-      dateRequested: new Date().toISOString().split('T')[0],
-      status: 'Pending',
-      assignedAgentName: 'Reality Estates Partner Desk'
-    };
-    setViewingRequests(prev => [newRequest, ...prev]);
-    showToast('Viewing request submitted! The property representative will contact you to confirm.', 'success');
+  // Toasts
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const showToast = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    setToasts(prev => [...prev.slice(-3), { id, text, type }]);
+    setTimeout(() => {
+      dismissToast(id);
+    }, 4500);
   };
 
-  const updateViewingStatus = (requestId: string, status: ViewingRequest['status']) => {
-    setViewingRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
-    showToast(`Viewing request updated to: ${status}`, 'info');
+  // Contact Agent Modal
+  const [contactAgentProperty, setContactAgentProperty] = useState<Property | null>(null);
+  const openContactAgentModal = (property: Property) => {
+    setContactAgentProperty(property);
+  };
+  const closeContactAgentModal = () => {
+    setContactAgentProperty(null);
   };
 
-  const cancelViewingRequest = (requestId: string) => {
-    setViewingRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Cancelled' } : r));
-    showToast('Viewing request has been cancelled.', 'info');
-  };
-
-  const addEnquiry = (
-    enq: Omit<Enquiry, 'id' | 'date' | 'status' | 'assignedRep'>
-  ) => {
-    const newEnquiry: Enquiry = {
-      ...enq,
-      id: `enq-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      status: 'New',
-      assignedRep: 'Operations Desk'
-    };
-    setEnquiries(prev => [newEnquiry, ...prev]);
-    showToast('Enquiry sent directly to listing representative.', 'success');
-  };
-
-  const updateEnquiryStatus = (enquiryId: string, status: Enquiry['status']) => {
-    setEnquiries(prev => prev.map(e => e.id === enquiryId ? { ...e, status } : e));
-    showToast(`Enquiry marked as: ${status}`, 'info');
-  };
-
-  const updateTransactionStage = (txId: string, stage: TransactionRecord['stage']) => {
-    setTransactions(prev => prev.map(t => t.id === txId ? { ...t, stage } : t));
-    showToast(`Transaction pipeline stage updated to: ${stage}`, 'info');
-  };
-
-  const submitFinancingEnquiry = (enquiry: Omit<FinancingEnquiry, 'id' | 'date' | 'status'>) => {
-    const newRecord: FinancingEnquiry = {
-      ...enquiry,
-      id: `fin-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      status: 'Submitted'
-    };
-    setFinancingEnquiries(prev => [newRecord, ...prev]);
-    showToast('Financing pre-qualification enquiry submitted to partner institutions.', 'success');
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
   };
 
   return (
-    <AppContext.Provider value={{
-      theme,
-      toggleTheme,
-      currentUser,
-      loginAs,
-      registerUser,
-      logout,
-      isAuthModalOpen,
-      authModalMessage,
-      openAuthModal,
-      closeAuthModal,
-      requireAuth,
-      currentPath,
-      navigateTo,
-      properties,
-      savedPropertyIds,
-      toggleSaveProperty,
-      isPropertySaved,
-      addProperty,
-      updatePropertyVerification,
-      viewingRequests,
-      addViewingRequest,
-      updateViewingStatus,
-      cancelViewingRequest,
-      enquiries,
-      addEnquiry,
-      updateEnquiryStatus,
-      transactions,
-      updateTransactionStage,
-      financingEnquiries,
-      submitFinancingEnquiry,
-      filters,
-      setFilters,
-      resetFilters,
-      toasts,
-      showToast,
-      dismissToast
-    }}>
+    <AppContext.Provider
+      value={{
+        currentUser,
+        loginAs,
+        registerUser,
+        logout,
+        isAuthModalOpen,
+        authModalMessage,
+        openAuthModal,
+        closeAuthModal,
+        requireAuth,
+        currentPath,
+        navigateTo,
+        properties,
+        savedPropertyIds,
+        toggleSaveProperty,
+        isPropertySaved,
+        addProperty,
+        updatePropertyVerification,
+        theme,
+        toggleTheme,
+        viewingRequests,
+        addViewingRequest,
+        updateViewingStatus,
+        cancelViewingRequest,
+        enquiries,
+        addEnquiry,
+        updateEnquiryStatus,
+        transactions,
+        updateTransactionStage,
+        filters,
+        setFilters,
+        resetFilters,
+        contactAgentProperty,
+        openContactAgentModal,
+        closeContactAgentModal,
+        toasts,
+        showToast,
+        dismissToast
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

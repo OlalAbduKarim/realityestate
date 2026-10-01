@@ -14,8 +14,7 @@ interface InteractiveAreaMapProps {
 export const InteractiveAreaMap: React.FC<InteractiveAreaMapProps> = ({
   properties,
   selectedProperty,
-  onSelectProperty,
-  interactive = true
+  onSelectProperty
 }) => {
   const { theme } = useApp();
   const [activePin, setActivePin] = useState<Property | null>(selectedProperty || null);

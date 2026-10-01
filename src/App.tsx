@@ -1,66 +1,49 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
-import { MobileNav } from './components/MobileNav';
 import { Footer } from './components/Footer';
+import { MobileNav } from './components/MobileNav';
 import { AuthModal } from './components/AuthModal';
+import { ContactAgentModal } from './components/ContactAgentModal';
 import { HomeView } from './views/HomeView';
 import { SearchView } from './views/SearchView';
 import { PropertyDetailView } from './views/PropertyDetailView';
 import { DashboardView } from './views/DashboardView';
 import { ListPropertyView } from './views/ListPropertyView';
 import { AdminView } from './views/AdminView';
-import { FinancingView } from './views/FinancingView';
-import { CheckCircle2, Info, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, Info, AlertCircle, X } from 'lucide-react';
 
-const MainContent: React.FC = () => {
-  const { currentPath, toasts, dismissToast } = useApp();
+const AppContent: React.FC = () => {
+  const { 
+    currentPath, 
+    toasts, 
+    dismissToast,
+    contactAgentProperty,
+    closeContactAgentModal
+  } = useApp();
 
-  // Route dispatcher
-  const renderView = () => {
-    // Property Details: /properties/[slug]
+  const renderCurrentView = () => {
+    if (currentPath === '/' || currentPath === '') {
+      return <HomeView />;
+    }
+    if (currentPath === '/search') {
+      return <SearchView />;
+    }
     if (currentPath.startsWith('/properties/')) {
       const slug = currentPath.replace('/properties/', '');
       return <PropertyDetailView slug={slug} />;
     }
-
-    // Search and category routes
-    if (
-      currentPath.startsWith('/search') ||
-      currentPath === '/buy' ||
-      currentPath === '/rent' ||
-      currentPath === '/commercial' ||
-      currentPath === '/land'
-    ) {
-      return <SearchView />;
-    }
-
-    // Dashboard
-    if (currentPath.startsWith('/dashboard')) {
+    if (currentPath === '/dashboard') {
       return <DashboardView />;
     }
-
-    // List Property Portal
-    if (currentPath.startsWith('/list-property')) {
+    if (currentPath === '/list-property') {
       return <ListPropertyView />;
     }
-
-    // Admin Console
-    if (currentPath.startsWith('/admin')) {
+    if (currentPath === '/admin') {
       return <AdminView />;
     }
 
-    // Financing
-    if (currentPath.startsWith('/financing')) {
-      return <FinancingView />;
-    }
-
-    // Default to Homepage
+    // Default fallback
     return <HomeView />;
   };
 
@@ -71,10 +54,10 @@ const MainContent: React.FC = () => {
 
       {/* Main View Container */}
       <main className="flex-1">
-        {renderView()}
+        {renderCurrentView()}
       </main>
 
-      {/* Footer */}
+      {/* Global Footer */}
       <Footer />
 
       {/* Mobile Bottom Navigation */}
@@ -83,29 +66,42 @@ const MainContent: React.FC = () => {
       {/* Global Contextual Auth Modal */}
       <AuthModal />
 
-      {/* Global Toast Notification System */}
-      <div className="fixed top-20 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full">
+      {/* Global Contact Agent Modal */}
+      {contactAgentProperty && (
+        <ContactAgentModal
+          property={contactAgentProperty}
+          isOpen={!!contactAgentProperty}
+          onClose={closeContactAgentModal}
+        />
+      )}
+
+      {/* Interactive Toast Notifications Container */}
+      <div 
+        aria-live="polite"
+        className="fixed bottom-16 sm:bottom-6 right-4 sm:right-6 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"
+      >
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className={`pointer-events-auto p-3.5 rounded-xl shadow-lg border text-xs font-medium flex items-start gap-2.5 transition-all duration-200 animate-in slide-in-from-top-2 ${
-              toast.type === 'success'
-                ? 'bg-stone-900 dark:bg-stone-800 text-white border-stone-800 dark:border-stone-700'
-                : toast.type === 'error'
-                  ? 'bg-rose-900 dark:bg-rose-950 text-white border-rose-800 dark:border-rose-900'
-                  : 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 border-stone-200 dark:border-stone-800'
+            className={`pointer-events-auto flex items-center justify-between gap-3 p-3.5 rounded-xl shadow-lg border text-xs font-medium backdrop-blur-md animate-in slide-in-from-bottom-2 duration-200 transition-colors ${
+              toast.type === 'success' 
+                ? 'bg-emerald-950/90 text-emerald-100 border-emerald-800' :
+              toast.type === 'error'
+                ? 'bg-rose-950/90 text-rose-100 border-rose-800' :
+                'bg-stone-900/90 dark:bg-stone-800/90 text-white border-stone-700'
             }`}
           >
-            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
-            {toast.type === 'error' && <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
-            {toast.type === 'info' && <Info className="w-4 h-4 text-stone-600 dark:text-stone-400 shrink-0 mt-0.5" />}
-            
-            <p className="flex-1 leading-relaxed">{toast.text}</p>
+            <div className="flex items-center gap-2.5">
+              {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
+              {toast.type === 'info' && <Info className="w-4 h-4 text-emerald-400 shrink-0" />}
+              <span>{toast.text}</span>
+            </div>
 
             <button
               onClick={() => dismissToast(toast.id)}
-              className="text-stone-400 hover:text-stone-700 dark:hover:text-white p-0.5 shrink-0 transition-colors"
-              aria-label="Dismiss toast"
+              className="p-1 text-stone-400 hover:text-white rounded-md transition-colors shrink-0"
+              aria-label="Dismiss notification"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -119,7 +115,7 @@ const MainContent: React.FC = () => {
 export default function App() {
   return (
     <AppProvider>
-      <MainContent />
+      <AppContent />
     </AppProvider>
   );
 }

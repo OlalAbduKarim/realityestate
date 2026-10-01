@@ -2,21 +2,24 @@ import React, { useState } from 'react';
 import { Property } from '../types/property';
 import { useApp } from '../context/AppContext';
 import { formatPriceDisplay } from '../utils/formatters';
-import { Heart, ShieldCheck, MapPin, Building, ArrowUpRight } from 'lucide-react';
+import { Heart, ShieldCheck, MapPin, Building, ArrowUpRight, Phone } from 'lucide-react';
 
 interface PropertyCardProps {
   property: Property;
   compact?: boolean;
 }
 
-export const PropertyCard: React.FC<PropertyCardProps> = ({ property, compact = false }) => {
-  const { navigateTo, isPropertySaved, toggleSaveProperty } = useApp();
+export const PropertyCard: React.FC<PropertyCardProps> = ({ property }) => {
+  const { navigateTo, isPropertySaved, toggleSaveProperty, openContactAgentModal } = useApp();
   const [imageError, setImageError] = useState(false);
   const saved = isPropertySaved(property.id);
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // Prevent triggering if clicked on favourite heart
-    if ((e.target as HTMLElement).closest('.favorite-btn')) {
+    // Prevent triggering if clicked on favourite heart or contact agent button
+    if (
+      (e.target as HTMLElement).closest('.favorite-btn') ||
+      (e.target as HTMLElement).closest('.contact-agent-btn')
+    ) {
       return;
     }
     navigateTo(`/properties/${property.slug}`);
@@ -108,7 +111,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, compact = 
           </div>
         </div>
 
-        {/* Metadata Specs - ZERO PILL DISCIPLINE: Unboxed text with subtle · separator */}
+        {/* Metadata Specs - ZERO PILL DISCIPLINE */}
         <div className="mt-4 pt-3 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
           <div className="flex items-center gap-1.5 flex-wrap">
             {property.bedrooms > 0 && (
@@ -136,10 +139,23 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, compact = 
             ) : null}
           </div>
 
-          {/* Subtle View affordance */}
-          <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 group-hover:text-stone-900 dark:group-hover:text-stone-200 flex items-center gap-0.5 transition-colors shrink-0">
-            View <ArrowUpRight className="w-3 h-3" />
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openContactAgentModal(property);
+              }}
+              className="contact-agent-btn text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/60 transition-colors cursor-pointer"
+              title={`Contact agent for ${property.title}`}
+            >
+              <Phone className="w-3 h-3" />
+              <span>Contact Agent</span>
+            </button>
+            <span className="text-[11px] font-medium text-stone-400 dark:text-stone-500 group-hover:text-stone-900 dark:group-hover:text-stone-200 flex items-center gap-0.5 transition-colors shrink-0">
+              <ArrowUpRight className="w-3 h-3" />
+            </span>
+          </div>
         </div>
       </div>
     </article>

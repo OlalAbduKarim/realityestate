@@ -6,7 +6,7 @@ export function formatUGX(amount: number, short = false): string {
     }
     if (amount >= 1_000_000) {
       const millions = amount / 1_000_000;
-      return `UGX ${millions % 1 === 0 ? millions : millions.toFixed(1)}M`;
+      return `UGX ${millions % 1 === 0 ? millions : millions.toFixed(0)}M`;
     }
     if (amount >= 1_000) {
       return `UGX ${(amount / 1_000).toFixed(0)}k`;
@@ -16,9 +16,13 @@ export function formatUGX(amount: number, short = false): string {
   return `UGX ${amount.toLocaleString('en-US')}`;
 }
 
-export function formatPriceDisplay(price: number, transaction: 'buy' | 'rent', pricePeriod?: 'month' | 'total'): string {
-  const formatted = formatUGX(price);
-  if (transaction === 'rent' || pricePeriod === 'month') {
+export function formatPriceDisplay(
+  price: number,
+  transaction: 'buy' | 'rent',
+  period?: 'month' | 'year' | 'total'
+): string {
+  const formatted = formatUGX(price, true);
+  if (transaction === 'rent') {
     return `${formatted} / mo`;
   }
   return formatted;
