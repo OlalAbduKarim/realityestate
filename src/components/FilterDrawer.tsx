@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { PropertyType } from '../types/property';
 import { formatUGX } from '../utils/formatters';
+import { UGANDAN_REGIONS, POPULAR_NEIGHBORHOODS } from '../data/ugandaLocations';
 import { 
   X, 
   RotateCcw, 
@@ -37,8 +38,6 @@ const AVAILABLE_FEATURES = [
   'Perimeter Wall',
   'Solar Backup'
 ];
-
-import { UGANDAN_REGIONS, ALL_UGANDAN_DISTRICTS, POPULAR_NEIGHBORHOODS } from '../data/ugandaLocations';
 
 const PROPERTY_TYPES: { label: string; value: 'all' | PropertyType; icon: React.ElementType }[] = [
   { label: 'All Types', value: 'all', icon: Building2 },
