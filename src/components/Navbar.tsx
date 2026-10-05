@@ -19,8 +19,7 @@ export const Navbar: React.FC = () => {
     currentPath,
     navigateTo,
     authStatus,
-    isAuthConfigured,
-    isDemoSession,
+    isDemoMode,
     currentUser,
     demoUsers,
     loginAs,
@@ -54,7 +53,7 @@ export const Navbar: React.FC = () => {
       {/* Top Status & Operations Bar (Clearly separates Production Supabase Auth vs. Demo Mode) */}
       <div className="bg-stone-900 text-stone-300 text-xs py-1.5 px-4 border-b border-stone-800">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          {!isAuthConfigured ? (
+          {isDemoMode ? (
             <>
               <div className="flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -175,7 +174,7 @@ export const Navbar: React.FC = () => {
                       <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-stone-800 text-emerald-400 border border-stone-700 ml-1">
                         {currentUser.role}
                       </span>
-                      {isDemoSession && (
+                      {isDemoMode && (
                         <span className="ml-1 text-amber-400 text-[10px]">(Demo)</span>
                       )}
                     </span>

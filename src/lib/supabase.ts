@@ -12,7 +12,10 @@ import { ServiceError } from '../types/api';
  *   operates in offline Demo Mode without crashing on startup.
  */
 
-const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
+  .trim()
+  .replace(/\/rest\/v1\/?$/i, '')
+  .replace(/\/+$/, '');
 const rawSupabasePublishableKey = (
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
