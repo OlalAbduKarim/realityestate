@@ -1,7 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Property } from '../types/property';
 import { useApp } from '../context/AppContext';
-import { X, Calendar, Clock, Phone, User as UserIcon, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { isValidIsoDateString } from '../utils/formatters';
+import {
+  X,
+  Calendar,
+  Clock,
+  Phone,
+  User as UserIcon,
+  MessageSquare,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
 
 interface ViewingRequestModalProps {
   property: Property;
@@ -9,10 +19,10 @@ interface ViewingRequestModalProps {
   onClose: () => void;
 }
 
-export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({ 
-  property, 
-  isOpen, 
-  onClose 
+export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
+  property,
+  isOpen,
+  onClose
 }) => {
   const { currentUser, addViewingRequest, navigateTo } = useApp();
 
@@ -23,44 +33,87 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
     nextDay.setDate(nextDay.getDate() + 2);
     return nextDay.toISOString().split('T')[0];
   });
-  const [preferredTime, setPreferredTime] = useState('10:00 AM – 11:30 AM');
+  const [preferredTime, setPreferredTime] = useState('10:30 AM – 12:00 PM');
   const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(currentUser?.name || '');
+      setPhone(currentUser?.phone || '+256 7');
+      setValidationError(null);
+      setIsSubmitting(false);
+    }
+  }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    addViewingRequest({
-      propertyId: property.id,
-      propertyTitle: property.title,
-      propertyLocation: `${property.location}, ${property.district}`,
-      propertyImage: property.images[0] || '',
-      propertyPrice: property.price,
-      propertyTransaction: property.transaction,
-      propertyPricePeriod: property.pricePeriod,
-      customerName: name.trim() || 'Prospective Client',
-      customerPhone: phone.trim() || '+256 700 000 000',
-      customerEmail: currentUser?.email,
-      preferredDate,
-      preferredTime,
-      message: message.trim() || 'Requesting on-site property inspection with representative.'
-    });
+    if (isSubmitting) return;
+    setValidationError(null);
 
-    setIsSubmitted(true);
+    const trimmedName = name.trim();
+    const trimmedPhone = phone.trim();
+
+    if (!trimmedName) {
+      setValidationError('Please enter your full name.');
+      return;
+    }
+    if (!trimmedPhone || trimmedPhone.replace(/\D/g, '').length < 7) {
+      setValidationError('Please enter a valid contact phone number.');
+      return;
+    }
+    if (!isValidIsoDateString(preferredDate)) {
+      setValidationError('Please select a valid preferred calendar date.');
+      return;
+    }
+    if (!preferredTime.trim()) {
+      setValidationError('Please select a preferred time window.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addViewingRequest({
+        propertyId: property.id,
+        propertyTitle: property.title,
+        propertyLocation: `${property.location}, ${property.district}`,
+        propertyImage: property.images?.[0] || '',
+        propertyPrice: property.price,
+        propertyTransaction: property.transaction,
+        propertyPricePeriod: property.pricePeriod,
+        customerName: trimmedName,
+        customerPhone: trimmedPhone,
+        customerEmail: currentUser?.email,
+        preferredDate,
+        preferredTime,
+        message: message.trim() || 'Requesting on-site property inspection with representative.'
+      });
+      setIsSubmitted(true);
+    } catch (err) {
+      setValidationError(
+        err instanceof Error ? err.message : 'Unable to submit viewing request.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {
     setIsSubmitted(false);
+    setValidationError(null);
     onClose();
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in"
       onClick={handleClose}
     >
-      <div 
+      <div
         className="bg-white dark:bg-stone-900 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-stone-100 dark:border-stone-800 relative animate-in zoom-in-95 max-h-[90vh] overflow-y-auto transition-colors"
         onClick={e => e.stopPropagation()}
       >
@@ -84,7 +137,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
               Your request for <strong className="text-stone-800 dark:text-stone-100">{property.title}</strong> on <strong className="text-stone-800 dark:text-stone-100">{preferredDate}</strong> ({preferredTime}) has been recorded.
             </p>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-2">
-              Representative <span className="font-semibold text-stone-700 dark:text-stone-200">{property.advertiser.name}</span> has been alerted to confirm access details.
+              Representative <span className="font-semibold text-stone-700 dark:text-stone-200">{property.advertiser?.name || 'Listing Representative'}</span> has been alerted to confirm access details.
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
@@ -120,6 +173,13 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                 {property.title} · {property.location}, {property.district}
               </p>
             </div>
+
+            {validationError && (
+              <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{validationError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -217,9 +277,10 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 px-4 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-xs"
+                disabled={isSubmitting}
+                className="w-full py-2.5 px-4 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white disabled:opacity-50 text-white dark:text-stone-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-xs"
               >
-                <span>Confirm Viewing Request</span>
+                <span>{isSubmitting ? 'Submitting Request...' : 'Confirm Viewing Request'}</span>
               </button>
             </form>
           </div>

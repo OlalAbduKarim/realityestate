@@ -1,276 +1,193 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Maximize2, 
-  X, 
-  ChevronLeft, 
-  ChevronRight, 
-  Play, 
-  FileText, 
-  Image as ImageIcon,
-  ZoomIn,
-  ZoomOut
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronLeft, ChevronRight, X, Maximize2, ImageOff } from 'lucide-react';
 
 interface PropertyGalleryProps {
   images: string[];
   title: string;
-  floorPlanUrl?: string;
-  videoUrl?: string;
 }
 
-export const PropertyGallery: React.FC<PropertyGalleryProps> = ({
-  images,
-  title,
-  floorPlanUrl
-}) => {
-  const [activeTab, setActiveTab] = useState<'photos' | 'floorplan' | 'video'>('photos');
+export const PropertyGallery: React.FC<PropertyGalleryProps> = ({ images, title }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isZoomed, setIsZoomed] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
-  const displayImages = images.length > 0 ? images : ['https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80'];
+  const safeImages = Array.isArray(images) ? images.filter(Boolean) : [];
 
-  const handleNext = () => {
-    setCurrentIndex(prev => (prev + 1) % displayImages.length);
+  if (safeImages.length === 0) {
+    return (
+      <div className="h-[320px] sm:h-[400px] rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 gap-2">
+        <ImageOff className="w-10 h-10" />
+        <p className="text-sm font-medium">No property photos uploaded yet</p>
+      </div>
+    );
+  }
+
+  const nextImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCurrentIndex((prev) => (prev + 1) % safeImages.length);
   };
 
-  const handlePrev = () => {
-    setCurrentIndex(prev => (prev - 1 + displayImages.length) % displayImages.length);
+  const prevImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCurrentIndex((prev) => (prev - 1 + safeImages.length) % safeImages.length);
   };
-
-  // Keyboard navigation for fullscreen lightbox
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isFullscreen) return;
-      if (e.key === 'Escape') setIsFullscreen(false);
-      if (e.key === 'ArrowRight') handleNext();
-      if (e.key === 'ArrowLeft') handlePrev();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen, displayImages.length]);
 
   return (
-    <div className="space-y-3">
-      
-      {/* Media Type Tabs */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-lg transition-colors">
-          <button
-            type="button"
-            onClick={() => setActiveTab('photos')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'photos' 
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
+    <>
+      {/* Main Gallery Grid (Desktop) & Carousel (Mobile) */}
+      <div className="relative rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-900">
+        {/* Desktop Grid */}
+        <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-2 h-[480px]">
+          <div
+            className="col-span-2 row-span-2 relative group cursor-pointer overflow-hidden"
+            onClick={() => {
+              setCurrentIndex(0);
+              setIsLightboxOpen(true);
+            }}
           >
-            <ImageIcon className="w-3.5 h-3.5" />
-            <span>Photos ({displayImages.length})</span>
-          </button>
+            <img
+              src={safeImages[0]}
+              alt={`${title} - Main`}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+          </div>
 
-          {floorPlanUrl && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('floorplan')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                activeTab === 'floorplan' 
-                  ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
-                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-              }`}
+          {safeImages.slice(1, 5).map((img, idx) => (
+            <div
+              key={idx}
+              className="relative group cursor-pointer overflow-hidden"
+              onClick={() => {
+                setCurrentIndex(idx + 1);
+                setIsLightboxOpen(true);
+              }}
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Floor Plan</span>
-            </button>
-          )}
+              <img
+                src={img}
+                alt={`${title} - ${idx + 2}`}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+              {idx === 3 && safeImages.length > 5 && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-semibold text-lg backdrop-blur-[2px]">
+                  +{safeImages.length - 5} more
+                </div>
+              )}
+            </div>
+          ))}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('video')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'video' 
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs' 
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            <Play className="w-3.5 h-3.5" />
-            <span>Virtual Tour</span>
-          </button>
+          {/* Fill empty slots if less than 5 images */}
+          {safeImages.length < 5 &&
+            Array.from({ length: 5 - safeImages.length }).map((_, idx) => (
+              <div
+                key={`empty-${idx}`}
+                className="bg-stone-200/50 dark:bg-stone-800/50 flex items-center justify-center text-stone-400 dark:text-stone-600 text-sm"
+              >
+                Reality Estates
+              </div>
+            ))}
         </div>
 
-        {/* Counter and Fullscreen Button */}
-        {activeTab === 'photos' && (
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(true)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Fullscreen</span>
-          </button>
-        )}
+        {/* Mobile Carousel */}
+        <div
+          className="md:hidden relative aspect-[4/3] w-full"
+          onClick={() => setIsLightboxOpen(true)}
+        >
+          <img
+            src={safeImages[currentIndex]}
+            alt={`${title} - ${currentIndex + 1}`}
+            className="w-full h-full object-cover"
+          />
+
+          {safeImages.length > 1 && (
+            <>
+              <button
+                onClick={prevImage}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 dark:bg-stone-900/80 backdrop-blur-md flex items-center justify-center text-stone-900 dark:text-white shadow-sm"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={nextImage}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 dark:bg-stone-900/80 backdrop-blur-md flex items-center justify-center text-stone-900 dark:text-white shadow-sm"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
+
+          <div className="absolute bottom-3 right-3 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-medium">
+            {currentIndex + 1} / {safeImages.length}
+          </div>
+        </div>
+
+        {/* View All Photos Button (Desktop) */}
+        <button
+          onClick={() => setIsLightboxOpen(true)}
+          className="hidden md:flex absolute bottom-4 right-4 px-4 py-2 bg-white/90 dark:bg-stone-900/90 hover:bg-white dark:hover:bg-stone-900 text-stone-900 dark:text-white rounded-xl font-medium text-sm shadow-md backdrop-blur-md items-center gap-2 transition-all"
+        >
+          <Maximize2 className="w-4 h-4" />
+          View all {safeImages.length} photos
+        </button>
       </div>
 
-      {/* Main View Area */}
-      {activeTab === 'photos' && (
-        <div className="space-y-2">
-          {/* Main Hero Viewport */}
-          <div className="relative aspect-16/9 sm:aspect-16/10 rounded-xl overflow-hidden bg-stone-900 group">
+      {/* Lightbox Modal */}
+      {isLightboxOpen && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between p-4 md:p-8">
+          <div className="flex justify-between items-center text-white">
+            <span className="text-sm font-medium">
+              {currentIndex + 1} of {safeImages.length}
+            </span>
+            <button
+              onClick={() => setIsLightboxOpen(false)}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="relative flex-1 flex items-center justify-center my-4 overflow-hidden">
             <img
-              src={displayImages[currentIndex]}
-              alt={`${title} - Photo ${currentIndex + 1}`}
-              className="w-full h-full object-cover transition-opacity duration-200"
+              src={safeImages[currentIndex]}
+              alt={`${title} - Fullscreen`}
+              className="max-h-full max-w-full object-contain"
             />
 
-            {/* Left / Right Nav Arrows */}
-            {displayImages.length > 1 && (
+            {safeImages.length > 1 && (
               <>
                 <button
-                  type="button"
-                  onClick={handlePrev}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-stone-900/60 hover:bg-stone-900/90 text-white flex items-center justify-center transition-colors shadow-md backdrop-blur-xs"
-                  aria-label="Previous image"
+                  onClick={prevImage}
+                  className="absolute left-2 md:left-8 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="w-6 h-6" />
                 </button>
                 <button
-                  type="button"
-                  onClick={handleNext}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-stone-900/60 hover:bg-stone-900/90 text-white flex items-center justify-center transition-colors shadow-md backdrop-blur-xs"
-                  aria-label="Next image"
+                  onClick={nextImage}
+                  className="absolute right-2 md:right-8 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
                 >
-                  <ChevronRight className="w-5 h-5" />
+                  <ChevronRight className="w-6 h-6" />
                 </button>
               </>
             )}
-
-            {/* Image Counter Badge */}
-            <div className="absolute bottom-3 right-3 bg-stone-900/75 backdrop-blur-xs text-white text-xs font-semibold px-2.5 py-1 rounded-md tabular-nums">
-              {currentIndex + 1} / {displayImages.length}
-            </div>
           </div>
 
-          {/* Thumbnail Rail */}
-          {displayImages.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-              {displayImages.map((img, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setCurrentIndex(idx)}
-                  className={`relative w-20 h-14 sm:w-24 sm:h-16 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                    currentIndex === idx ? 'border-stone-900 dark:border-stone-100 ring-2 ring-stone-900/20 dark:ring-white/20' : 'border-transparent opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Floor Plan View */}
-      {activeTab === 'floorplan' && (
-        <div className="relative aspect-16/10 rounded-xl overflow-hidden bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 flex flex-col items-center justify-center p-6 text-center">
-          <div className="max-w-md space-y-3">
-            <div className="w-12 h-12 bg-white dark:bg-stone-700 rounded-xl shadow-xs border border-stone-200 dark:border-stone-600 flex items-center justify-center mx-auto text-stone-700 dark:text-stone-200">
-              <FileText className="w-6 h-6" />
-            </div>
-            <h4 className="text-sm font-semibold text-stone-900 dark:text-white">Architectural Cadastral Layout</h4>
-            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
-              Standardized architectural floor schematic approved for construction. Physical dimensions and room demarcations are on file with the verified listing dossier.
-            </p>
-            <div className="pt-2">
-              <span className="inline-block text-[11px] bg-white dark:bg-stone-700 border border-stone-200 dark:border-stone-600 px-3 py-1.5 rounded-lg text-stone-700 dark:text-stone-200 font-mono">
-                CAD-REF: RE-UG-{title.slice(0, 4).toUpperCase()}-2026
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Video / Virtual Tour View */}
-      {activeTab === 'video' && (
-        <div className="relative aspect-16/9 rounded-xl overflow-hidden bg-stone-900 text-white flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center hover:scale-105 transition-transform cursor-pointer mb-3">
-            <Play className="w-7 h-7 text-white fill-white ml-0.5" />
-          </div>
-          <h4 className="text-base font-serif font-bold">HD Virtual Walkthrough Available</h4>
-          <p className="text-xs text-stone-300 max-w-sm mt-1">
-            Recorded 4K drone cinematography and interior steady-cam walkthrough. Request viewing to receive complete private uncompressed video reel.
-          </p>
-        </div>
-      )}
-
-      {/* Fullscreen Lightbox Modal */}
-      {isFullscreen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-between p-4 sm:p-6 animate-in fade-in"
-          onClick={() => setIsFullscreen(false)}
-        >
-          {/* Top Bar */}
-          <div className="w-full flex items-center justify-between text-white z-10" onClick={e => e.stopPropagation()}>
-            <span className="text-xs font-semibold tabular-nums text-stone-300">
-              {currentIndex + 1} of {displayImages.length} · {title}
-            </span>
-            <div className="flex items-center gap-3">
+          {/* Thumbnails */}
+          <div className="flex justify-center gap-2 overflow-x-auto py-2">
+            {safeImages.map((img, idx) => (
               <button
-                type="button"
-                onClick={() => setIsZoomed(!isZoomed)}
-                className="p-2 text-stone-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
-                title={isZoomed ? 'Zoom Out' : 'Zoom In'}
+                key={idx}
+                onClick={() => setCurrentIndex(idx)}
+                className={`relative w-16 h-12 rounded-lg overflow-hidden shrink-0 transition-all ${
+                  currentIndex === idx
+                    ? 'ring-2 ring-white opacity-100'
+                    : 'opacity-50 hover:opacity-80'
+                }`}
               >
-                {isZoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
+                <img src={img} alt="Thumbnail" className="w-full h-full object-cover" />
               </button>
-              <button
-                type="button"
-                onClick={() => setIsFullscreen(false)}
-                className="p-2 text-stone-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
-                title="Close (Esc)"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-          </div>
-
-          {/* Main Zoomable Image */}
-          <div 
-            className="flex-1 w-full flex items-center justify-center overflow-auto p-2"
-            onClick={e => e.stopPropagation()}
-          >
-            <img
-              src={displayImages[currentIndex]}
-              alt={title}
-              className={`max-h-[82vh] max-w-[95vw] object-contain transition-transform duration-200 select-none ${
-                isZoomed ? 'scale-150 cursor-grab' : 'scale-100'
-              }`}
-            />
-          </div>
-
-          {/* Bottom Navigation */}
-          <div className="w-full flex items-center justify-center gap-4 text-white z-10" onClick={e => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={handlePrev}
-              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            <span className="text-xs text-stone-300 font-medium tabular-nums">
-              Use arrow keys to navigate
-            </span>
-            <button
-              type="button"
-              onClick={handleNext}
-              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
+            ))}
           </div>
         </div>
       )}
-
-    </div>
+    </>
   );
 };

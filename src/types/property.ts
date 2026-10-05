@@ -12,6 +12,46 @@ export type PropertyType =
 
 export type UserRole = 'buyer' | 'agent' | 'owner' | 'developer' | 'admin';
 
+export type CurrencyCode = 'UGX' | 'USD';
+
+export type PricePeriod = 'month' | 'year' | 'total';
+
+export type LandTenure = 'Mailo' | 'Freehold' | 'Leasehold' | 'Customary';
+
+export type PropertyAvailability = 'Available' | 'Under Offer' | 'Sold' | 'Rented';
+
+export type VerificationStatus = 'verified' | 'unverified' | 'pending';
+
+export type ListingStatus = 'published' | 'pending' | 'draft';
+
+export type AdvertiserType = 'Owner' | 'Agent' | 'Developer';
+
+export type ViewingStatus = 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
+
+/**
+ * Preserves both the core enquiry lifecycle statuses ('New' | 'Replied' | 'Archived')
+ * and extended CRM inquiry audit statuses used in existing seed data and admin views.
+ */
+export type EnquiryStatus = 
+  | 'New' 
+  | 'Replied' 
+  | 'Archived' 
+  | 'Contacted' 
+  | 'Viewing Scheduled' 
+  | 'Offer Made' 
+  | 'Closed' 
+  | 'Lost';
+
+export type TransactionStage = 
+  | 'Enquiry' 
+  | 'Contacted' 
+  | 'Viewing' 
+  | 'Negotiation' 
+  | 'Offer' 
+  | 'Closed';
+
+export type PaymentStatus = 'Pending' | 'Invoiced' | 'Received';
+
 export interface User {
   id: string;
   name: string;
@@ -26,7 +66,7 @@ export interface User {
 export interface PropertyAdvertiser {
   id: string;
   name: string;
-  type: 'Owner' | 'Agent' | 'Developer';
+  type: AdvertiserType;
   phone: string;
   whatsapp: string;
   email: string;
@@ -52,6 +92,21 @@ export interface PropertyInsightsData {
   capitalGrowthForecast?: string; // e.g. +8.5% YoY
 }
 
+/**
+ * Persisted property image record corresponding to the `property_images` table
+ * in Supabase PostgreSQL and objects stored in Supabase Storage.
+ * Never contains browser-local `blob:` URLs.
+ */
+export interface PersistedPropertyImage {
+  id: string;
+  propertyId: string;
+  storagePath?: string;
+  url: string;
+  displayOrder: number;
+  altText?: string;
+  createdAt?: string;
+}
+
 export interface Property {
   id: string;
   slug: string;
@@ -59,8 +114,8 @@ export interface Property {
   transaction: TransactionType;
   propertyType: PropertyType;
   price: number;
-  currency: 'UGX' | 'USD';
-  pricePeriod?: 'month' | 'year' | 'total';
+  currency: CurrencyCode;
+  pricePeriod?: PricePeriod;
   location: string; // e.g. "Kololo", "Kira", "Naguru"
   district: string; // e.g. "Kampala", "Wakiso"
   address: string;
@@ -69,14 +124,15 @@ export interface Property {
   parking: number;
   landSizeDecimals?: number; // Standard Ugandan land decimal (100 decimals = 1 acre)
   buildingSizeSqm?: number;
-  tenure?: 'Mailo' | 'Freehold' | 'Leasehold' | 'Customary';
+  tenure?: LandTenure;
   furnished?: boolean;
-  availability: 'Available' | 'Under Offer' | 'Sold' | 'Rented';
-  verificationStatus: 'verified' | 'unverified' | 'pending';
-  listingStatus: 'published' | 'pending' | 'draft';
+  availability: PropertyAvailability;
+  verificationStatus: VerificationStatus;
+  listingStatus: ListingStatus;
   description: string;
   features: string[]; // e.g. ["Solar Backup", "Swimming Pool", "Water Reservoir", "Security Guards"]
-  images: string[];
+  images: string[]; // Ordered permanent public URLs (never blob: URLs)
+  propertyImages?: PersistedPropertyImage[]; // Rich persisted image metadata & ordering
   floorPlanUrl?: string;
   videoUrl?: string;
   advertiser: PropertyAdvertiser;
@@ -87,7 +143,7 @@ export interface Property {
     lng: number;
   };
   featured?: boolean;
-  dateAdded: string;
+  dateAdded: string; // ISO 8601 date string (YYYY-MM-DD or full ISO timestamp)
   neighborhoodHighlights?: string[];
 }
 
@@ -103,11 +159,11 @@ export interface ViewingRequest {
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
-  preferredDate: string;
+  preferredDate: string; // ISO date string YYYY-MM-DD
   preferredTime: string;
   message?: string;
-  status: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
-  dateRequested: string;
+  status: ViewingStatus;
+  dateRequested: string; // ISO date string YYYY-MM-DD
   assignedAgentName?: string;
 }
 
@@ -123,8 +179,8 @@ export interface Enquiry {
   customerPhone: string;
   subject?: string;
   message: string;
-  date: string;
-  status: 'New' | 'Contacted' | 'Viewing Scheduled' | 'Offer Made' | 'Closed' | 'Lost';
+  date: string; // ISO date string YYYY-MM-DD
+  status: EnquiryStatus;
   notes?: string;
   assignedRep?: string;
 }
@@ -137,10 +193,10 @@ export interface TransactionRecord {
   agentName: string;
   transactionType: TransactionType;
   transactionValue: number;
-  agreedCommissionPercent: number; // e.g. 3% for sale, 100% for rent
-  platformRevenue: number;
-  stage: 'Enquiry' | 'Contacted' | 'Viewing' | 'Negotiation' | 'Offer' | 'Closed';
-  paymentStatus: 'Pending' | 'Invoiced' | 'Received';
+  agreedCommissionPercent: number; // Display-only on client; authoritative calculation belongs on backend
+  platformRevenue: number; // Display-only on client; authoritative calculation belongs on backend
+  stage: TransactionStage;
+  paymentStatus: PaymentStatus;
   dateInitiated: string;
   dateClosed?: string;
 }

@@ -1,245 +1,369 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Property } from '../types/property';
-import { useApp } from '../context/AppContext';
-import { formatUGX } from '../utils/formatters';
-import { Navigation, Eye, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { formatPriceDisplay } from '../utils/formatters';
+import {
+  MapPin,
+  ShieldCheck,
+  Navigation,
+  ArrowUpRight,
+  Bed,
+  Bath,
+  Maximize,
+  Sparkles,
+  Compass,
+  ImageOff
+} from 'lucide-react';
 
 interface InteractiveAreaMapProps {
   properties: Property[];
-  selectedProperty?: Property | null;
-  onSelectProperty?: (property: Property) => void;
-  interactive?: boolean;
+  onSelectProperty: (property: Property) => void;
 }
 
 export const InteractiveAreaMap: React.FC<InteractiveAreaMapProps> = ({
   properties,
-  selectedProperty,
   onSelectProperty
 }) => {
-  const { theme } = useApp();
-  const [activePin, setActivePin] = useState<Property | null>(selectedProperty || null);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [activeProperty, setActiveProperty] = useState<Property | null>(
+    properties[0] || null
+  );
+  const [selectedZone, setSelectedZone] = useState<string>('All');
 
-  const isDark = theme === 'dark';
+  useEffect(() => {
+    if (
+      properties.length > 0 &&
+      (!activeProperty || !properties.some((p) => p.id === activeProperty.id))
+    ) {
+      setActiveProperty(properties[0]);
+    } else if (properties.length === 0) {
+      setActiveProperty(null);
+    }
+  }, [properties, activeProperty]);
 
-  const projectCoordinates = (lat: number, lng: number) => {
-    const minLat = 0.02;
-    const maxLat = 0.48;
-    const minLng = 32.42;
-    const maxLng = 32.78;
+  // Dynamically extract distinct districts from the filtered properties so listings outside Kampala are equally represented
+  const zones = [
+    'All',
+    ...Array.from(new Set(properties.map((p) => p.district).filter(Boolean)))
+  ];
 
-    const x = ((lng - minLng) / (maxLng - minLng)) * 720 + 40;
-    const y = 560 - ((lat - minLat) / (maxLat - minLat)) * 500;
-    return { x: Math.max(40, Math.min(760, x)), y: Math.max(40, Math.min(560, y)) };
+  const visibleProperties =
+    selectedZone === 'All'
+      ? properties
+      : properties.filter((p) => p.district === selectedZone);
+
+  // Convert lat/lng into relative x/y percentages across the map canvas
+  const getCanvasCoords = (prop: Property, index: number) => {
+    if (prop.coordinates) {
+      const { lat, lng } = prop.coordinates;
+      const x = Math.min(88, Math.max(12, ((lng - 32.45) / (32.68 - 32.45)) * 76 + 12));
+      const y = Math.min(86, Math.max(14, (1 - (lat - 0.04) / (0.42 - 0.04)) * 72 + 14));
+      return { x, y };
+    }
+    const fallbackPositions = [
+      { x: 48, y: 42 },
+      { x: 56, y: 36 },
+      { x: 64, y: 48 },
+      { x: 42, y: 58 },
+      { x: 72, y: 30 },
+      { x: 30, y: 78 },
+      { x: 52, y: 50 },
+      { x: 60, y: 62 }
+    ];
+    return fallbackPositions[index % fallbackPositions.length];
   };
 
   return (
-    <div className="relative w-full h-full min-h-[420px] rounded-xl overflow-hidden bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 select-none transition-colors">
-      
-      {/* Interactive Map Header Controls */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
-        <div className="bg-white/95 dark:bg-stone-800/95 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 shadow-xs flex items-center gap-1.5 text-xs font-medium text-stone-800 dark:text-stone-200">
-          <Navigation className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span>Greater Kampala & Wakiso Corridor</span>
+    <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-lg h-full flex flex-col">
+      {/* Top Map Toolbar */}
+      <div className="px-6 py-4 border-b border-stone-200 dark:border-stone-800 flex flex-wrap items-center justify-between gap-4 bg-stone-50/70 dark:bg-stone-900/80">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-emerald-900 text-white flex items-center justify-center">
+            <Compass className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-stone-900 dark:text-white">
+              Uganda Interactive Property Explorer
+            </h3>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Click any price pin on the map to inspect neighborhood metrics and property status
+            </p>
+          </div>
+        </div>
+
+        {/* Zone Quick Filter */}
+        <div className="flex flex-wrap items-center gap-1.5 bg-stone-200/70 dark:bg-stone-800 p-1 rounded-xl">
+          {zones.map((zone) => (
+            <button
+              key={zone}
+              onClick={() => {
+                setSelectedZone(zone);
+                const firstInZone =
+                  zone === 'All'
+                    ? properties[0]
+                    : properties.find((p) => p.district === zone);
+                if (firstInZone) setActiveProperty(firstInZone);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                selectedZone === zone
+                  ? 'bg-white dark:bg-stone-900 text-emerald-900 dark:text-emerald-400 shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+              }`}
+            >
+              {zone === 'All' ? 'All Districts' : zone}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5">
-        <button
-          type="button"
-          onClick={() => setZoomLevel(prev => Math.min(prev + 0.25, 2.0))}
-          className="p-2 bg-white/95 dark:bg-stone-800/95 hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 rounded-lg border border-stone-200 dark:border-stone-700 shadow-xs transition-colors"
-          title="Zoom In"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setZoomLevel(prev => Math.max(prev - 0.25, 0.75))}
-          className="p-2 bg-white/95 dark:bg-stone-800/95 hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 rounded-lg border border-stone-200 dark:border-stone-700 shadow-xs transition-colors"
-          title="Zoom Out"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-      </div>
+      {/* Main Split Map & Preview */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 min-h-[380px]">
+        {/* Left: Stylized SVG Map Canvas */}
+        <div className="lg:col-span-8 relative bg-[#e9efe8] dark:bg-[#131c18] overflow-hidden min-h-[340px]">
+          <svg
+            className="absolute inset-0 w-full h-full object-cover opacity-80 dark:opacity-40 pointer-events-none"
+            viewBox="0 0 800 600"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <pattern id="map-grid" width="60" height="60" patternUnits="userSpaceOnUse">
+                <path
+                  d="M 60 0 L 0 0 0 60"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="0.6"
+                  className="text-emerald-900/10 dark:text-emerald-400/10"
+                />
+              </pattern>
+            </defs>
+            <rect width="800" height="600" fill="url(#map-grid)" />
 
-      {/* SVG Canvas Map */}
-      <div 
-        className="w-full h-full transition-transform duration-300 flex items-center justify-center"
-        style={{ transform: `scale(${zoomLevel})` }}
-      >
-        <svg 
-          viewBox="0 0 800 600" 
-          className="w-full h-full w-[800px] h-[600px] object-cover"
-        >
-          <defs>
-            <linearGradient id="lakeWater" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={isDark ? '#1e3a8a' : '#bfdbfe'} stopOpacity={isDark ? '0.7' : '0.4'} />
-              <stop offset="100%" stopColor={isDark ? '#172554' : '#93c5fd'} stopOpacity={isDark ? '0.9' : '0.6'} />
-            </linearGradient>
-          </defs>
+            <path
+              d="M 0 470 Q 180 430 340 480 T 680 440 L 800 460 L 800 600 L 0 600 Z"
+              className="fill-sky-200/70 dark:fill-sky-950/60"
+            />
+            <path
+              d="M 0 490 Q 200 455 360 500 T 700 465 L 800 485 L 800 600 L 0 600 Z"
+              className="fill-sky-300/50 dark:fill-sky-900/40"
+            />
 
-          {/* Background landmass */}
-          <rect width="800" height="600" fill={isDark ? '#1c1917' : '#f5f5f4'} />
+            <circle
+              cx="380"
+              cy="240"
+              r="95"
+              className="fill-emerald-200/35 dark:fill-emerald-900/20"
+            />
+            <circle
+              cx="530"
+              cy="190"
+              r="75"
+              className="fill-emerald-300/25 dark:fill-emerald-800/15"
+            />
+            <circle
+              cx="260"
+              cy="420"
+              r="65"
+              className="fill-emerald-200/30 dark:fill-emerald-900/20"
+            />
 
-          {/* Lake Victoria body at South */}
-          <path
-            d="M 0,420 Q 150,440 260,400 T 450,470 T 680,450 T 800,520 L 800,600 L 0,600 Z"
-            fill="url(#lakeWater)"
-          />
-          <text x="360" y="540" fill={isDark ? '#93c5fd' : '#60a5fa'} fontSize="13" fontWeight="600" letterSpacing="2">
-            LAKE VICTORIA
-          </text>
+            <path
+              d="M 100 120 Q 350 240 420 280 T 750 220"
+              fill="none"
+              strokeWidth="4"
+              className="stroke-amber-400/50 dark:stroke-amber-500/30"
+            />
+            <path
+              d="M 380 260 Q 340 380 240 510"
+              fill="none"
+              strokeWidth="4"
+              strokeDasharray="8 4"
+              className="stroke-emerald-600/40 dark:stroke-emerald-500/30"
+            />
+            <path
+              d="M 220 80 Q 390 220 520 440"
+              fill="none"
+              strokeWidth="2.5"
+              className="stroke-stone-400/40 dark:stroke-stone-600/40"
+            />
+          </svg>
 
-          {/* Transport Corridors */}
-          <path
-            d="M 120,260 C 240,240 380,220 540,240 C 620,250 710,270 780,290"
-            fill="none"
-            stroke={isDark ? '#292524' : '#e7e5e4'}
-            strokeWidth="8"
-            strokeLinecap="round"
-          />
-          <path
-            d="M 120,260 C 240,240 380,220 540,240 C 620,250 710,270 780,290"
-            fill="none"
-            stroke={isDark ? '#57534e' : '#a8a29e'}
-            strokeWidth="2.5"
-            strokeDasharray="6,4"
-          />
-          <text x="360" y="215" fill={isDark ? '#78716c' : '#a8a29e'} fontSize="10" fontWeight="500">
-            NORTHERN BYPASS
-          </text>
+          {/* Subtle Geographic Labels */}
+          <div className="absolute top-6 left-8 pointer-events-none select-none">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-stone-400 dark:text-stone-500 block">
+              Northern Bypass & Wakiso Growth Belt
+            </span>
+          </div>
+          <div className="absolute top-[38%] left-[44%] -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
+            <span className="text-xs font-extrabold uppercase tracking-[0.2em] text-stone-500/50 dark:text-stone-400/40">
+              Central Kampala
+            </span>
+          </div>
+          <div className="absolute bottom-8 right-10 pointer-events-none select-none text-right">
+            <span className="text-xs font-bold uppercase tracking-widest text-sky-800/60 dark:text-sky-400/50 block">
+              Lake Victoria Shoreline
+            </span>
+            <span className="text-[10px] text-sky-700/50 dark:text-sky-400/40">
+              Munyonyo • Garuga • Entebbe Corridor
+            </span>
+          </div>
 
-          {/* Entebbe Expressway */}
-          <path
-            d="M 380,310 C 340,360 280,440 210,500"
-            fill="none"
-            stroke={isDark ? '#292524' : '#e7e5e4'}
-            strokeWidth="7"
-          />
-          <path
-            d="M 380,310 C 340,360 280,440 210,500"
-            fill="none"
-            stroke={isDark ? '#57534e' : '#a8a29e'}
-            strokeWidth="2.5"
-          />
-          <text x="230" y="440" fill={isDark ? '#78716c' : '#a8a29e'} fontSize="9" fontWeight="500" transform="rotate(-40 230 440)">
-            ENTEBBE EXPRESSWAY
-          </text>
-
-          {/* Jinja Road */}
-          <path
-            d="M 420,300 C 510,290 620,280 780,270"
-            fill="none"
-            stroke={isDark ? '#292524' : '#e7e5e4'}
-            strokeWidth="6"
-          />
-          <path
-            d="M 420,300 C 510,290 620,280 780,270"
-            fill="none"
-            stroke={isDark ? '#57534e' : '#a8a29e'}
-            strokeWidth="2"
-          />
-
-          {/* Regional Labels */}
-          <g fontSize="11" fontWeight="700" fill={isDark ? '#a8a29e' : '#78716c'}>
-            <text x="380" y="300">KAMPALA CBD</text>
-            <text x="430" y="260">KOLOLO</text>
-            <text x="450" y="235">NAGURU</text>
-            <text x="475" y="210">NTINDA</text>
-            <text x="510" y="180">KIRA</text>
-            <text x="410" y="360">MUYENGA</text>
-            <text x="390" y="410">MUNYONYO</text>
-            <text x="320" y="380">LUBOWA</text>
-            <text x="180" y="520">ENTEBBE</text>
-            <text x="690" y="250">MUKONO</text>
-          </g>
-
-          {/* Property Pins */}
-          {properties.map((prop) => {
-            const { x, y } = projectCoordinates(prop.coordinates.lat, prop.coordinates.lng);
-            const isSelected = activePin?.id === prop.id;
+          {/* Interactive Property Price Pins */}
+          {visibleProperties.map((prop, idx) => {
+            const { x, y } = getCanvasCoords(prop, idx);
+            const isSelected = activeProperty?.id === prop.id;
 
             return (
-              <g
+              <button
                 key={prop.id}
-                transform={`translate(${x}, ${y})`}
-                className="cursor-pointer transition-transform hover:scale-125"
-                onClick={() => {
-                  setActivePin(prop);
-                  if (onSelectProperty) onSelectProperty(prop);
-                }}
+                onClick={() => setActiveProperty(prop)}
+                style={{ left: `${x}%`, top: `${y}%` }}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-300 group focus:outline-none ${
+                  isSelected ? 'z-30 scale-110' : 'z-10 hover:z-20 hover:scale-105'
+                }`}
               >
-                {isSelected && (
-                  <circle r="16" fill="#10b981" opacity="0.4" className="animate-ping" />
-                )}
-                <ellipse cx="0" cy="14" rx="7" ry="3" fill="#000000" opacity="0.25" />
-                <path
-                  d="M 0,0 C -6,-10 -9,-14 -9,-20 C -9,-25 -5,-29 0,-29 C 5,-29 9,-25 9,-20 C 9,-14 6,-10 0,0 Z"
-                  fill={isSelected ? '#10b981' : prop.transaction === 'buy' ? (isDark ? '#e7e5e4' : '#1c1917') : '#059669'}
-                  stroke={isDark ? '#0c0a09' : '#ffffff'}
-                  strokeWidth="2"
+                <div
+                  className={`px-3 py-1.5 rounded-full font-bold text-xs shadow-lg flex items-center gap-1.5 border transition-colors ${
+                    isSelected
+                      ? 'bg-emerald-900 text-white border-white ring-4 ring-emerald-500/30'
+                      : 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white border-stone-200 dark:border-stone-700 hover:border-emerald-600'
+                  }`}
+                >
+                  {prop.verificationStatus === 'verified' && (
+                    <ShieldCheck
+                      className={`w-3.5 h-3.5 ${
+                        isSelected
+                          ? 'text-emerald-300'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    />
+                  )}
+                  <span>
+                    {formatPriceDisplay(
+                      prop.price,
+                      prop.transaction,
+                      prop.pricePeriod,
+                      prop.currency
+                    )}
+                  </span>
+                </div>
+                <div
+                  className={`w-2.5 h-2.5 rotate-45 mx-auto -mt-1.5 border-r border-b ${
+                    isSelected
+                      ? 'bg-emerald-900 border-white'
+                      : 'bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-700'
+                  }`}
                 />
-                <circle cx="0" cy="-20" r="3.5" fill={isDark && prop.transaction === 'buy' && !isSelected ? '#0c0a09' : '#ffffff'} />
-              </g>
+              </button>
             );
           })}
-        </svg>
-      </div>
-
-      {/* Floating Property Card Popover when pin is clicked */}
-      {activePin && (
-        <div className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80 bg-white dark:bg-stone-800 rounded-xl shadow-xl border border-stone-200 dark:border-stone-700 p-3 z-30 animate-in fade-in slide-in-from-bottom-2">
-          <button
-            onClick={() => setActivePin(null)}
-            className="absolute top-2 right-2 p-1 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-full"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          <div className="flex gap-3">
-            <div className="w-20 h-16 rounded-lg bg-stone-100 dark:bg-stone-700 overflow-hidden shrink-0">
-              <img
-                src={activePin.images[0]}
-                alt={activePin.title}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="flex-1 min-w-0 pr-4">
-              <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 tracking-wider">
-                {activePin.transaction === 'buy' ? 'For Sale' : 'For Rent'} · {activePin.propertyType}
-              </span>
-              <h4 className="text-xs font-semibold text-stone-900 dark:text-white truncate mt-0.5">
-                {activePin.title}
-              </h4>
-              <p className="text-xs font-bold text-stone-900 dark:text-white mt-1 tabular-nums">
-                {formatUGX(activePin.price, true)}
-                {activePin.transaction === 'rent' ? '/mo' : ''}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-stone-100 dark:border-stone-700 flex items-center justify-between">
-            <span className="text-[11px] text-stone-500 dark:text-stone-400 truncate">
-              {activePin.location}, {activePin.district}
-            </span>
-            <button
-              onClick={() => {
-                if (onSelectProperty) {
-                  onSelectProperty(activePin);
-                } else {
-                  window.location.pathname = `/properties/${activePin.slug}`;
-                }
-              }}
-              className="text-xs font-semibold text-stone-900 dark:text-white hover:underline flex items-center gap-1 shrink-0"
-            >
-              <span>View Details</span>
-              <Eye className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
-      )}
 
+        {/* Right: Active Property Inspector Card */}
+        <div className="lg:col-span-4 p-6 flex flex-col justify-between bg-white dark:bg-stone-900 border-t lg:border-t-0 lg:border-l border-stone-200 dark:border-stone-800 overflow-y-auto">
+          {activeProperty ? (
+            <div className="space-y-4">
+              <div className="relative aspect-[16/10] rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800">
+                {activeProperty.images?.[0] ? (
+                  <img
+                    src={activeProperty.images[0]}
+                    alt={activeProperty.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 gap-1">
+                    <ImageOff className="w-6 h-6" />
+                    <span className="text-xs">No Image</span>
+                  </div>
+                )}
+                <div className="absolute top-3 left-3 flex gap-1.5">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase bg-stone-900/85 text-white backdrop-blur-md">
+                    {activeProperty.transaction === 'buy' ? 'For Sale' : 'For Rent'}
+                  </span>
+                  {activeProperty.verificationStatus === 'verified' && (
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-900/90 text-white backdrop-blur-md flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-300" /> Verified
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-400 mb-1">
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>
+                    {activeProperty.location}, {activeProperty.district}
+                  </span>
+                </div>
+                <h4 className="text-base font-bold text-stone-900 dark:text-white leading-snug mb-1 line-clamp-2">
+                  {activeProperty.title}
+                </h4>
+                <p className="text-xl font-extrabold text-emerald-900 dark:text-emerald-400">
+                  {formatPriceDisplay(
+                    activeProperty.price,
+                    activeProperty.transaction,
+                    activeProperty.pricePeriod,
+                    activeProperty.currency
+                  )}
+                </p>
+              </div>
+
+              {/* Specs */}
+              <div className="flex items-center gap-4 py-2.5 border-y border-stone-100 dark:border-stone-800 text-xs text-stone-600 dark:text-stone-400">
+                {activeProperty.bedrooms > 0 && (
+                  <span className="flex items-center gap-1 font-medium">
+                    <Bed className="w-4 h-4 text-stone-400" /> {activeProperty.bedrooms} Beds
+                  </span>
+                )}
+                {activeProperty.bathrooms > 0 && (
+                  <span className="flex items-center gap-1 font-medium">
+                    <Bath className="w-4 h-4 text-stone-400" /> {activeProperty.bathrooms} Baths
+                  </span>
+                )}
+                {(activeProperty.buildingSizeSqm !== undefined ||
+                  activeProperty.landSizeDecimals !== undefined) && (
+                  <span className="flex items-center gap-1 font-medium">
+                    <Maximize className="w-4 h-4 text-stone-400" />
+                    {activeProperty.buildingSizeSqm
+                      ? `${activeProperty.buildingSizeSqm} sqm`
+                      : `${activeProperty.landSizeDecimals} dec`}
+                  </span>
+                )}
+              </div>
+
+              {/* Area Intelligence Snapshot */}
+              {activeProperty.insights && (
+                <div className="bg-stone-50 dark:bg-stone-800/50 rounded-xl p-3 border border-stone-200/70 dark:border-stone-700/60 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900 dark:text-white">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    Neighborhood Intelligence
+                  </div>
+                  {activeProperty.insights.capitalGrowthForecast && (
+                    <p className="text-xs text-stone-600 dark:text-stone-300 leading-relaxed">
+                      Forecast: {activeProperty.insights.capitalGrowthForecast}
+                    </p>
+                  )}
+                  {activeProperty.insights.grossRentalYield !== undefined && (
+                    <div className="text-[11px] text-stone-500 dark:text-stone-400">
+                      Est. Gross Yield: {activeProperty.insights.grossRentalYield}% p.a.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                onClick={() => onSelectProperty(activeProperty)}
+                className="w-full py-3 px-5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+              >
+                <span>Open Full Property Dossier</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-stone-400">
+              <Navigation className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Select a pin on the map to inspect property details.</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

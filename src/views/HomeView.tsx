@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { PropertyType } from '../types/property';
 import { SearchBar } from '../components/SearchBar';
 import { PropertyCard } from '../components/PropertyCard';
 import { InteractiveAreaMap } from '../components/InteractiveAreaMap';
@@ -28,7 +29,7 @@ export const HomeView: React.FC = () => {
     new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
   ).slice(0, 6);
 
-  const PROPERTY_TYPES = [
+  const PROPERTY_TYPES: Array<{ name: string; type: PropertyType; icon: React.ElementType; count: number }> = [
     { name: 'Houses', type: 'House', icon: Home, count: properties.filter(p => p.propertyType === 'House').length },
     { name: 'Apartments', type: 'Apartment', icon: Building2, count: properties.filter(p => p.propertyType === 'Apartment').length },
     { name: 'Land', type: 'Land', icon: LandPlot, count: properties.filter(p => p.propertyType === 'Land').length },
@@ -46,8 +47,8 @@ export const HomeView: React.FC = () => {
     { name: 'Jinja & Mukono', district: 'Central / East', count: properties.filter(p => p.location.includes('Mukono') || p.location.includes('Jinja')).length, desc: 'Industrial growth, expansive land & tourism nodes' },
   ];
 
-  const handleTypeClick = (type: string) => {
-    setFilters({ propertyType: type as any });
+  const handleTypeClick = (type: PropertyType) => {
+    setFilters({ propertyType: type });
     navigateTo('/search');
   };
 

@@ -1,27 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { Property } from '../types/property';
 import { useApp } from '../context/AppContext';
-import { 
-  X, 
-  Phone, 
-  MessageSquare, 
-  Send, 
-  CheckCircle2, 
-  ShieldCheck, 
-  Mail, 
-  User, 
-  Building2,
+import {
+  X,
+  Phone,
+  MessageSquare,
+  Send,
+  CheckCircle2,
+  ShieldCheck,
+  Mail,
+  User,
   Clock,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  AlertCircle
 } from 'lucide-react';
-import { formatUGX } from '../utils/formatters';
+import { formatCurrency } from '../utils/formatters';
 
 export interface ContactAgentModalProps {
   property: Property;
   isOpen: boolean;
   onClose: () => void;
   initialSubject?: string;
+  defaultTab?: 'call' | 'whatsapp' | 'message';
 }
 
 export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
@@ -32,17 +33,22 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
 }) => {
   const { currentUser, openAuthModal, addEnquiry, navigateTo } = useApp();
 
-  // Subject is pre-filled with the property title as requested
   const [subject, setSubject] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [inquiryType, setInquiryType] = useState<'General Inquiry' | 'Schedule Inspection' | 'Price Negotiation' | 'Availability Check'>('General Inquiry');
+  const [inquiryType, setInquiryType] = useState<
+    'General Inquiry' | 'Schedule Inspection' | 'Price Negotiation' | 'Availability Check'
+  >('General Inquiry');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Initialize form fields when modal opens or property changes
+  const advertiserName = property?.advertiser?.name || 'Property Representative';
+  const advertiserPhone = property?.advertiser?.phone || '';
+  const advertiserWhatsapp = property?.advertiser?.whatsapp || advertiserPhone;
+
   useEffect(() => {
     if (isOpen && property) {
       const defaultSubject = initialSubject || `Inquiry regarding ${property.title}`;
@@ -51,14 +57,14 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
       setCustomerEmail(currentUser?.email || '');
       setCustomerPhone(currentUser?.phone || '');
       setMessage(
-        `Hello ${property.advertiser.name},\n\nI am inquiring about "${property.title}" in ${property.location}, ${property.district} (Price: ${formatUGX(property.price, true)}).\n\nCould you please provide further details and inform me of when the property is available for a walkthrough inspection?\n\nThank you.`
+        `Hello ${advertiserName},\n\nI am inquiring about "${property.title}" in ${property.location}, ${property.district} (Price: ${formatCurrency(property.price, property.currency, true)}).\n\nCould you please provide further details and inform me of when the property is available for a walkthrough inspection?\n\nThank you.`
       );
       setSubmitted(false);
       setIsSubmitting(false);
+      setErrorMessage(null);
     }
-  }, [isOpen, property, currentUser, initialSubject]);
+  }, [isOpen, property, currentUser, initialSubject, advertiserName]);
 
-  // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -71,20 +77,22 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
 
   if (!isOpen || !property) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setErrorMessage(null);
+
     if (!customerName.trim() || !customerPhone.trim() || !message.trim()) {
+      setErrorMessage('Please fill in your name, phone number, and message.');
       return;
     }
 
     setIsSubmitting(true);
-
-    // Simulate swift network dispatch
-    setTimeout(() => {
-      addEnquiry({
+    try {
+      await addEnquiry({
         propertyId: property.id,
         propertyTitle: property.title,
-        propertyImage: property.images[0] || '',
+        propertyImage: property.images?.[0] || '',
         propertyPrice: property.price,
         propertyLocation: `${property.location}, ${property.district}`,
         customerName: customerName.trim(),
@@ -93,10 +101,14 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
         subject: subject.trim() || property.title,
         message: message.trim()
       });
-
-      setIsSubmitting(false);
       setSubmitted(true);
-    }, 450);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Unable to send enquiry. Please check your details.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleInquiryTypeSelect = (type: typeof inquiryType) => {
@@ -104,34 +116,33 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
     let updatedMsg = '';
     switch (type) {
       case 'Schedule Inspection':
-        updatedMsg = `Hello ${property.advertiser.name},\n\nI would like to schedule an in-person physical inspection for "${property.title}". Please let me know your availability this week.\n\nThank you.`;
+        updatedMsg = `Hello ${advertiserName},\n\nI would like to schedule an in-person physical inspection for "${property.title}". Please let me know your availability this week.\n\nThank you.`;
         break;
       case 'Price Negotiation':
-        updatedMsg = `Hello ${property.advertiser.name},\n\nI am reviewing "${property.title}" listed at ${formatUGX(property.price, true)}. Is there flexibility on the price for a committed buyer/tenant?\n\nLooking forward to your guidance.`;
+        updatedMsg = `Hello ${advertiserName},\n\nI am reviewing "${property.title}" listed at ${formatCurrency(property.price, property.currency, true)}. Is there flexibility on the price for a committed buyer/tenant?\n\nLooking forward to your guidance.`;
         break;
       case 'Availability Check':
-        updatedMsg = `Hello ${property.advertiser.name},\n\nIs "${property.title}" in ${property.location} still actively available on the market? Please confirm the current status.\n\nThank you.`;
+        updatedMsg = `Hello ${advertiserName},\n\nIs "${property.title}" in ${property.location} still actively available on the market? Please confirm the current status.\n\nThank you.`;
         break;
       default:
-        updatedMsg = `Hello ${property.advertiser.name},\n\nI am inquiring about "${property.title}" in ${property.location}, ${property.district} (Price: ${formatUGX(property.price, true)}).\n\nCould you please provide further details and inform me of when the property is available for inspection?\n\nThank you.`;
+        updatedMsg = `Hello ${advertiserName},\n\nI am inquiring about "${property.title}" in ${property.location}, ${property.district} (Price: ${formatCurrency(property.price, property.currency, true)}).\n\nCould you please provide further details and inform me of when the property is available for inspection?\n\nThank you.`;
         break;
     }
     setMessage(updatedMsg);
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={onClose}
       aria-modal="true"
       role="dialog"
       aria-labelledby="contact-agent-modal-title"
     >
-      <div 
+      <div
         className="bg-white dark:bg-stone-900 rounded-2xl max-w-xl w-full p-5 sm:p-7 shadow-2xl border border-stone-100 dark:border-stone-800 relative animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto text-left transition-colors"
         onClick={e => e.stopPropagation()}
       >
-        {/* Close Button */}
         <button
           onClick={onClose}
           type="button"
@@ -142,7 +153,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
         </button>
 
         {submitted ? (
-          /* Confirmation Success Screen */
           <div className="py-6 text-center space-y-4 animate-in fade-in duration-300">
             <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
               <CheckCircle2 className="w-9 h-9" />
@@ -153,24 +163,27 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 Message Sent to Agent
               </h3>
               <p className="text-xs text-stone-600 dark:text-stone-300 mt-2 max-w-md mx-auto leading-relaxed">
-                Your message regarding <strong className="text-stone-900 dark:text-white">"{property.title}"</strong> has been delivered to <strong className="text-emerald-700 dark:text-emerald-400">{property.advertiser.name}</strong> ({property.advertiser.agencyName || 'Listing Agent'}).
+                Your message regarding <strong className="text-stone-900 dark:text-white">"{property.title}"</strong> has been delivered to <strong className="text-emerald-700 dark:text-emerald-400">{advertiserName}</strong> ({property.advertiser?.agencyName || 'Listing Agent'}).
               </p>
             </div>
 
-            {/* Inquiry Summary Box */}
             <div className="bg-stone-50 dark:bg-stone-800/60 rounded-xl p-4 text-left border border-stone-200/70 dark:border-stone-700/60 text-xs space-y-1.5 max-w-md mx-auto">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">Subject:</span>
                 <span className="font-semibold text-stone-900 dark:text-stone-100 truncate ml-2">{subject}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500 dark:text-stone-400">Expected Response:</span>
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{property.advertiser.responseRate}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-stone-500 dark:text-stone-400">Agent Phone:</span>
-                <span className="font-mono text-stone-800 dark:text-stone-200">{property.advertiser.phone}</span>
-              </div>
+              {property.advertiser?.responseRate && (
+                <div className="flex justify-between">
+                  <span className="text-stone-500 dark:text-stone-400">Expected Response:</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{property.advertiser.responseRate}</span>
+                </div>
+              )}
+              {advertiserPhone && (
+                <div className="flex justify-between">
+                  <span className="text-stone-500 dark:text-stone-400">Agent Phone:</span>
+                  <span className="font-mono text-stone-800 dark:text-stone-200">{advertiserPhone}</span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3">
@@ -196,7 +209,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
           </div>
         ) : (
           <div>
-            {/* Modal Header */}
             <div className="mb-4">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 mb-1">
                 Direct Agent Inquiry
@@ -209,57 +221,69 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
               </p>
             </div>
 
+            {errorMessage && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
             {/* Agent / Representative Profile Card */}
             <div className="bg-stone-50 dark:bg-stone-800/70 rounded-xl p-3.5 border border-stone-200/80 dark:border-stone-700/60 mb-5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-11 h-11 rounded-full bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 flex items-center justify-center text-sm font-bold shrink-0">
-                  {property.advertiser.name.charAt(0)}
+                  {advertiserName.charAt(0)}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-bold text-stone-900 dark:text-white truncate">
-                      {property.advertiser.name}
+                      {advertiserName}
                     </span>
-                    {property.advertiser.verified && (
+                    {property.advertiser?.verified && (
                       <span title="Verified Agent">
                         <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-stone-500 dark:text-stone-400 truncate">
-                    <span className="truncate">{property.advertiser.agencyName || property.advertiser.type}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
-                      <Clock className="w-3 h-3" /> {property.advertiser.responseRate}
-                    </span>
+                    <span className="truncate">{property.advertiser?.agencyName || property.advertiser?.type || 'Representative'}</span>
+                    {property.advertiser?.responseRate && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
+                          <Clock className="w-3 h-3" /> {property.advertiser.responseRate}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Direct Quick Contact Buttons */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <a
-                  href={`tel:${property.advertiser.phone.replace(/\s+/g, '')}`}
-                  title="Call Agent directly"
-                  className="p-2 bg-white dark:bg-stone-700 hover:bg-stone-100 dark:hover:bg-stone-600 text-stone-800 dark:text-stone-100 rounded-lg border border-stone-200 dark:border-stone-600 transition-colors shadow-2xs"
-                >
-                  <Phone className="w-4 h-4" />
-                </a>
-                <a
-                  href={`https://wa.me/${property.advertiser.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello ${property.advertiser.name}, I am contacting you regarding "${property.title}" on Reality Estates.`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Chat on WhatsApp"
-                  className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-2xs"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                </a>
-              </div>
+              {advertiserPhone && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <a
+                    href={`tel:${advertiserPhone.replace(/\s+/g, '')}`}
+                    title="Call Agent directly"
+                    className="p-2 bg-white dark:bg-stone-700 hover:bg-stone-100 dark:hover:bg-stone-600 text-stone-800 dark:text-stone-100 rounded-lg border border-stone-200 dark:border-stone-600 transition-colors shadow-2xs"
+                  >
+                    <Phone className="w-4 h-4" />
+                  </a>
+                  {advertiserWhatsapp && (
+                    <a
+                      href={`https://wa.me/${advertiserWhatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello ${advertiserName}, I am contacting you regarding "${property.title}" on Reality Estates.`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Chat on WhatsApp"
+                      className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-2xs"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Contact Form */}
             <form onSubmit={handleSubmit} className="space-y-3.5">
-              {/* Pre-filled Subject Field */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label htmlFor="contact-agent-subject" className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
@@ -280,9 +304,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 />
               </div>
 
-              {/* User Details Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Full Name */}
                 <div>
                   <label htmlFor="contact-agent-name" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
                     Your Name <span className="text-rose-500">*</span>
@@ -301,7 +323,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                   </div>
                 </div>
 
-                {/* Phone Number */}
                 <div>
                   <label htmlFor="contact-agent-phone" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
                     Phone / WhatsApp <span className="text-rose-500">*</span>
@@ -321,7 +342,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 </div>
               </div>
 
-              {/* Email Address */}
               <div>
                 <label htmlFor="contact-agent-email" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
                   Email Address <span className="text-stone-400 text-[10px] font-normal">(Optional)</span>
@@ -339,7 +359,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 </div>
               </div>
 
-              {/* Quick Inquiry Intent Pills */}
               <div>
                 <label className="block text-[11px] font-semibold text-stone-500 dark:text-stone-400 mb-1.5">
                   I want to:
@@ -362,10 +381,9 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 </div>
               </div>
 
-              {/* Message */}
               <div>
                 <label htmlFor="contact-agent-message" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  Your Message to {property.advertiser.name} <span className="text-rose-500">*</span>
+                  Your Message to {advertiserName} <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   id="contact-agent-message"
@@ -377,7 +395,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 />
               </div>
 
-              {/* Guest Notice if not logged in */}
               {!currentUser && (
                 <div className="p-2.5 bg-stone-50 dark:bg-stone-800/50 rounded-lg border border-stone-200/80 dark:border-stone-700/60 text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between">
                   <span>Have an account? Sign in for one-click contact.</span>
@@ -391,7 +408,6 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 </div>
               )}
 
-              {/* Submit Button */}
               <div className="pt-1">
                 <button
                   type="submit"
@@ -416,5 +432,4 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
   );
 };
 
-// Also export alias for backwards-compatibility
 export const ContactRepresentativeModal = ContactAgentModal;

@@ -11,6 +11,7 @@ import { PropertyDetailView } from './views/PropertyDetailView';
 import { DashboardView } from './views/DashboardView';
 import { ListPropertyView } from './views/ListPropertyView';
 import { AdminView } from './views/AdminView';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { CheckCircle2, Info, AlertCircle, X } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -34,13 +35,46 @@ const AppContent: React.FC = () => {
       return <PropertyDetailView slug={slug} />;
     }
     if (currentPath === '/dashboard') {
-      return <DashboardView />;
+      return (
+        <ProtectedRoute
+          title="Sign in to your account"
+          description="Access your saved properties, manage viewing requests, and track your listings across Uganda."
+        >
+          <DashboardView />
+        </ProtectedRoute>
+      );
     }
     if (currentPath === '/list-property') {
-      return <ListPropertyView />;
+      return (
+        <ProtectedRoute
+          title="Sign in to list a property"
+          description="Please sign in or create an owner, agent, or developer account to publish and manage property listings."
+        >
+          <ListPropertyView />
+        </ProtectedRoute>
+      );
+    }
+    if (currentPath.startsWith('/edit-property/')) {
+      const editId = currentPath.replace('/edit-property/', '');
+      return (
+        <ProtectedRoute
+          title="Sign in to edit your listing"
+          description="Please sign in to manage your property listing and photographs."
+        >
+          <ListPropertyView editPropertyId={editId} />
+        </ProtectedRoute>
+      );
     }
     if (currentPath === '/admin') {
-      return <AdminView />;
+      return (
+        <ProtectedRoute
+          requiredRole="admin"
+          title="Sign in to Admin Operations Desk"
+          description="Please sign in with an authorized Reality Estates Admin account to access verification and transaction pipelines."
+        >
+          <AdminView />
+        </ProtectedRoute>
+      );
     }
 
     // Default fallback

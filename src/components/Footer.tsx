@@ -1,176 +1,169 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldCheck, ArrowRight, Sun, Moon } from 'lucide-react';
+import { PropertyType } from '../types/property';
+import { Building2, MapPin, Phone, Mail } from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { navigateTo, setFilters, theme, toggleTheme } = useApp();
+  const { navigateTo, setFilters } = useApp();
 
-  const handleLocationClick = (location: string) => {
-    setFilters({ location });
-    navigateTo('/search');
-  };
-
-  const handleTypeClick = (propertyType: any) => {
-    setFilters({ propertyType });
+  const handleQuickSearch = (location: string, type?: PropertyType | 'all') => {
+    setFilters({
+      location,
+      district: 'All Districts',
+      propertyType: type ? type : 'all'
+    });
     navigateTo('/search');
   };
 
   return (
-    <footer className="bg-stone-900 dark:bg-stone-950 text-stone-300 dark:text-stone-400 pt-16 pb-24 md:pb-16 border-t border-stone-800 transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Top brand grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-stone-800">
-          
-          {/* Brand info */}
+    <footer className="bg-stone-950 text-stone-400 border-t border-stone-800 pb-20 md:pb-0">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
+          {/* Brand Column */}
           <div className="lg:col-span-2 space-y-4">
-            <span className="text-2xl font-serif font-bold text-white tracking-tight">
-              Reality Estates
-            </span>
-            <p className="text-sm text-stone-400 max-w-sm leading-relaxed">
-              Uganda's premier property discovery and listing marketplace. Connecting discerning buyers and tenants with verified homes, apartments, land parcels, and commercial spaces across the country.
-            </p>
-            <div className="flex items-center gap-2 text-xs text-stone-400 pt-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Dedicated property physical inspections & advertiser verification desk</span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-800 flex items-center justify-center text-white">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <span className="font-semibold text-xl tracking-tight text-white">
+                Reality<span className="text-emerald-500">Estates</span>
+              </span>
             </div>
-
-            {/* Quick Dark Mode toggle in footer */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="inline-flex items-center gap-2 py-1.5 px-3 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-medium transition-colors"
-              >
-                {theme === 'dark' ? (
-                  <>
-                    <Sun className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Switch to Light Theme</span>
-                  </>
-                ) : (
-                  <>
-                    <Moon className="w-3.5 h-3.5 text-stone-300" />
-                    <span>Switch to Dark Theme</span>
-                  </>
-                )}
-              </button>
+            <p className="text-sm text-stone-400 max-w-sm leading-relaxed">
+              Uganda's premier digital real estate marketplace. Connecting discerning buyers, tenants, and investors with verified homes, apartments, and titled land across Kampala, Wakiso, Entebbe, Mbarara, Gulu, Jinja, and all Ugandan districts.
+            </p>
+            <div className="pt-2 space-y-2 text-xs text-stone-400">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Plot 14, Acacia Avenue, Kololo, Kampala, Uganda</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>+256 700 123 456 / +256 772 987 654</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>concierge@realityestates.ug</span>
+              </div>
             </div>
           </div>
 
-          {/* Quick Explore */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Explore</h4>
-            <ul className="space-y-2 text-sm text-stone-400">
+          {/* Popular Locations */}
+          <div>
+            <h4 className="text-white font-semibold text-sm mb-4">Prime Locations</h4>
+            <ul className="space-y-2.5 text-sm">
+              {['Kololo', 'Nakasero', 'Bugolobi', 'Muyenga', 'Ntinda', 'Kira', 'Entebbe'].map(
+                (loc) => (
+                  <li key={loc}>
+                    <button
+                      onClick={() => handleQuickSearch(loc)}
+                      className="hover:text-emerald-400 transition-colors text-left"
+                    >
+                      Properties in {loc}
+                    </button>
+                  </li>
+                )
+              )}
+            </ul>
+          </div>
+
+          {/* Property Types */}
+          <div>
+            <h4 className="text-white font-semibold text-sm mb-4">Property Types</h4>
+            <ul className="space-y-2.5 text-sm">
               <li>
-                <button onClick={() => { setFilters({ transaction: 'buy' }); navigateTo('/search'); }} className="hover:text-white transition-colors">
-                  Properties for Sale
+                <button
+                  onClick={() => handleQuickSearch('', 'House')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  Houses for Sale & Rent
                 </button>
               </li>
               <li>
-                <button onClick={() => { setFilters({ transaction: 'rent' }); navigateTo('/search'); }} className="hover:text-white transition-colors">
-                  Rental Properties
+                <button
+                  onClick={() => handleQuickSearch('', 'Apartment')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  Serviced Apartments
                 </button>
               </li>
               <li>
-                <button onClick={() => handleTypeClick('House')} className="hover:text-white transition-colors">
-                  Residential Houses
-                </button>
-              </li>
-              <li>
-                <button onClick={() => handleTypeClick('Apartment')} className="hover:text-white transition-colors">
-                  Modern Apartments
-                </button>
-              </li>
-              <li>
-                <button onClick={() => handleTypeClick('Land')} className="hover:text-white transition-colors">
+                <button
+                  onClick={() => handleQuickSearch('', 'Land')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
                   Titled Land & Plots
                 </button>
               </li>
               <li>
-                <button onClick={() => handleTypeClick('Commercial')} className="hover:text-white transition-colors">
-                  Commercial & Offices
+                <button
+                  onClick={() => handleQuickSearch('', 'Commercial')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  Commercial & Office Space
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => handleQuickSearch('', 'Office')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  Executive Offices
                 </button>
               </li>
             </ul>
           </div>
 
-          {/* Popular Locations */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Locations</h4>
-            <ul className="space-y-2 text-sm text-stone-400">
+          {/* Platform Links */}
+          <div>
+            <h4 className="text-white font-semibold text-sm mb-4">Platform</h4>
+            <ul className="space-y-2.5 text-sm">
               <li>
-                <button onClick={() => handleLocationClick('Kololo')} className="hover:text-white transition-colors">
-                  Kololo, Kampala
+                <button
+                  onClick={() => navigateTo('/list-property')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  List Your Property
                 </button>
               </li>
               <li>
-                <button onClick={() => handleLocationClick('Naguru')} className="hover:text-white transition-colors">
-                  Naguru Hill
+                <button
+                  onClick={() => navigateTo('/dashboard')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  Saved Properties
                 </button>
               </li>
               <li>
-                <button onClick={() => handleLocationClick('Kira')} className="hover:text-white transition-colors">
-                  Kira Municipality
+                <button
+                  onClick={() => navigateTo('/dashboard')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  Manage Viewings
                 </button>
               </li>
               <li>
-                <button onClick={() => handleLocationClick('Muyenga')} className="hover:text-white transition-colors">
-                  Muyenga & Buziga
-                </button>
+                <span className="text-stone-500 cursor-default">
+                  Land Title Verification Guide
+                </span>
               </li>
               <li>
-                <button onClick={() => handleLocationClick('Entebbe')} className="hover:text-white transition-colors">
-                  Entebbe Peninsula
-                </button>
-              </li>
-              <li>
-                <button onClick={() => handleLocationClick('Ntinda')} className="hover:text-white transition-colors">
-                  Ntinda & Ministers Village
-                </button>
-              </li>
-            </ul>
-          </div>
-
-          {/* Suppliers & Partners */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Partners & Agents</h4>
-            <ul className="space-y-2 text-sm text-stone-400">
-              <li>
-                <button onClick={() => navigateTo('/list-property')} className="hover:text-white transition-colors flex items-center gap-1 text-emerald-400 font-medium">
-                  <span>List Your Property</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </li>
-              <li>
-                <button onClick={() => navigateTo('/admin')} className="hover:text-white transition-colors text-xs text-stone-500">
-                  Operations Console
-                </button>
+                <span className="text-stone-500 cursor-default">
+                  Uganda Real Estate Report
+                </span>
               </li>
             </ul>
           </div>
-
         </div>
 
-        {/* Regulatory Notice */}
-        <div className="py-6 border-b border-stone-800 text-xs text-stone-500 leading-relaxed space-y-2">
-          <p>
-            <strong className="text-stone-400">Important Regulatory Notice:</strong> Reality Estates is a real estate discovery, marketing, and listing marketplace. The platform does not hold escrow or buyer funds, process rental payments, transfer legal land titles, approve mortgages, guarantee property titles, or provide legal advice.
-          </p>
-          <p>
-            Listing verification information is based strictly on physical inspections and advertiser identity checks conducted by the platform and does NOT substitute for independent cadastral search, boundary opening, and legal due diligence by an advocate of the High Court of Uganda.
-          </p>
-        </div>
-
-        {/* Bottom copyright */}
-        <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-stone-500 gap-4">
-          <p>© {new Date().getFullYear()} Reality Estates Uganda Limited. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <span>Kampala, Uganda</span>
-            <span>·</span>
-            <span>ISO Compliant Verification Standards</span>
+        <div className="border-t border-stone-800/80 mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-stone-500 gap-4">
+          <p>© {new Date().getFullYear()} Reality Estates Uganda Ltd. All rights reserved.</p>
+          <div className="flex gap-6">
+            <span>Privacy Policy</span>
+            <span>Terms of Service</span>
+            <span>Land Tenure Advisory</span>
           </div>
         </div>
-
       </div>
     </footer>
   );

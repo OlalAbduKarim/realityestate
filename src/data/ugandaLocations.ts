@@ -1,7 +1,13 @@
 /**
- * Official Ugandan Districts and Neighborhoods Database
- * Covers all 136 administrative districts grouped by regions,
- * plus popular residential, commercial, and peri-urban neighborhoods.
+ * Consolidated Ugandan Districts and Neighborhoods Reference Module
+ *
+ * NOTE FOR BACKEND / DATA VERIFICATION:
+ * This module consolidates the regional district groupings and popular residential,
+ * commercial, and peri-urban neighborhoods used by the frontend discovery filters.
+ * Currently contains 133 district entries across the 4 administrative regions.
+ * Before enforcing strict foreign-key or enum constraints in production PostgreSQL,
+ * verify and reconcile this list against the latest gazetted Uganda Bureau of
+ * Statistics (UBOS) / Ministry of Local Government administrative register.
  */
 
 export interface UgandaRegion {

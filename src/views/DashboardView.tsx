@@ -1,700 +1,582 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { PropertyCard } from '../components/PropertyCard';
-import { DEMO_USERS } from '../data/mockProperties';
-import { formatUGX } from '../utils/formatters';
-import { 
-  Heart, 
-  Calendar, 
-  MessageSquare, 
-  Sparkles, 
-  User as UserIcon, 
-  ArrowRight, 
-  ShieldCheck, 
-  Columns, 
-  X, 
-  Check, 
-  Trash2, 
-  Building2, 
-  Clock, 
+import {
+  Heart,
+  Calendar,
+  Building,
+  Plus,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  MapPin,
   Phone,
-  SlidersHorizontal,
-  Compass,
-  Lock
+  ArrowRight,
+  LogOut,
+  ShieldCheck,
+  MessageSquare,
+  Send
 } from 'lucide-react';
-import { Property, TransactionType } from '../types/property';
 
-export const DashboardView: React.FC = () => {
-  const { 
-    currentUser, 
-    loginAs, 
-    logout, 
-    openAuthModal, 
-    properties, 
-    savedPropertyIds, 
-    toggleSaveProperty,
-    viewingRequests, 
+interface DashboardViewProps {
+  initialTab?: 'saved' | 'viewings' | 'listings' | 'enquiries';
+}
+
+export const DashboardView: React.FC<DashboardViewProps> = ({ initialTab = 'saved' }) => {
+  const {
+    currentUser,
+    logout,
+    properties,
+    savedPropertyIds,
+    viewingRequests,
+    updateViewingStatus,
     cancelViewingRequest,
-    enquiries, 
+    enquiries,
+    updateEnquiryStatus,
+    submitPropertyForVerification,
     navigateTo,
-    showToast 
+    openAuthModal
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'saved' | 'viewings' | 'enquiries' | 'recommended'>('saved');
-  const [compareIds, setCompareIds] = useState<string[]>([]);
-  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
-  const [savedTransactionFilter, setSavedTransactionFilter] = useState<'all' | 'buy' | 'rent'>('all');
-  const [savedSortBy, setSavedSortBy] = useState<'newest' | 'price_asc' | 'price_desc'>('newest');
+  const [activeTab, setActiveTab] = useState<'saved' | 'viewings' | 'listings' | 'enquiries'>(
+    initialTab
+  );
+  const [submittingPropertyId, setSubmittingPropertyId] = useState<string | null>(null);
+  const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
 
-  // Filter saved properties
-  const savedProperties = useMemo(() => {
-    return properties
-      .filter(p => savedPropertyIds.includes(p.id))
-      .filter(p => {
-        if (savedTransactionFilter === 'all') return true;
-        return p.transaction === savedTransactionFilter;
-      })
-      .sort((a, b) => {
-        if (savedSortBy === 'price_asc') return a.price - b.price;
-        if (savedSortBy === 'price_desc') return b.price - a.price;
-        return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime();
-      });
-  }, [properties, savedPropertyIds, savedTransactionFilter, savedSortBy]);
+  if (!currentUser) {
+    return (
+      <div className="min-h-[70vh] bg-stone-50 dark:bg-stone-950 flex flex-col items-center justify-center p-4 transition-colors duration-200">
+        <div className="bg-white dark:bg-stone-900 p-8 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-sm max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Building className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-stone-900 dark:text-white mb-2">
+            Sign in to your account
+          </h2>
+          <p className="text-stone-600 dark:text-stone-400 mb-8">
+            Access your saved properties, manage viewing requests, and track your listings across Uganda.
+          </p>
+          <button
+            onClick={() => openAuthModal()}
+            className="w-full py-3.5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl font-medium transition-colors"
+          >
+            Sign In / Create Account
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  // Total valuation of saved properties
-  const totalSavedValue = useMemo(() => {
-    return savedProperties.reduce((sum, p) => sum + p.price, 0);
-  }, [savedProperties]);
+  const savedProperties = properties.filter((p) => savedPropertyIds.includes(p.id));
+  const userListings = properties.filter(
+    (p) =>
+      p.advertiser?.id === currentUser.id ||
+      p.advertiser?.email === currentUser.email ||
+      (currentUser.role === 'agent' && p.id === 'prop-1') ||
+      currentUser.role === 'admin'
+  );
 
-  // Filter recommendations (distinct from saved)
-  const recommendedProperties = properties
-    .filter(p => !savedPropertyIds.includes(p.id) && p.featured)
-    .slice(0, 4);
-
-  // Toggle selection for comparison
-  const toggleCompare = (id: string) => {
-    if (compareIds.includes(id)) {
-      setCompareIds(compareIds.filter(i => i !== id));
-    } else {
-      if (compareIds.length >= 3) {
-        showToast('You can compare a maximum of 3 properties at once', 'info');
-        return;
-      }
-      setCompareIds([...compareIds, id]);
+  const handlePropertyClick = (propertyId: string) => {
+    const found = properties.find((p) => p.id === propertyId);
+    if (found) {
+      navigateTo(`/properties/${found.slug}`);
     }
   };
 
-  const handleClearAllSaved = () => {
-    if (savedPropertyIds.length === 0) return;
-    if (window.confirm('Are you sure you want to remove all saved properties?')) {
-      savedPropertyIds.forEach(id => toggleSaveProperty(id));
-      setCompareIds([]);
-      showToast('All saved properties cleared', 'info');
+  const handleSubmitDraftForReview = async (propertyId: string) => {
+    if (submittingPropertyId) return;
+    setSubmittingPropertyId(propertyId);
+    setSubmissionFeedback(null);
+    try {
+      await submitPropertyForVerification(propertyId);
+      setSubmissionFeedback('Listing submitted for verification and publication review.');
+    } catch (err) {
+      setSubmissionFeedback(
+        err instanceof Error ? err.message : 'Unable to submit listing for verification.'
+      );
+    } finally {
+      setSubmittingPropertyId(null);
     }
   };
 
-  const propertiesToCompare = properties.filter(p => compareIds.includes(p.id));
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Pending':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+            <Clock className="w-3.5 h-3.5" /> Pending Confirmation
+          </span>
+        );
+      case 'Confirmed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Confirmed
+          </span>
+        );
+      case 'Completed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Completed
+          </span>
+        );
+      case 'Cancelled':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300">
+            <XCircle className="w-3.5 h-3.5" /> Cancelled
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const getListingStatusBadge = (listingStatus: string, verificationStatus: string) => {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span
+          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
+            listingStatus === 'published'
+              ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300'
+              : listingStatus === 'pending'
+              ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
+              : 'bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
+          }`}
+        >
+          {listingStatus}
+        </span>
+        <span
+          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
+            verificationStatus === 'verified'
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+              : verificationStatus === 'pending'
+              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+              : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
+          }`}
+        >
+          {verificationStatus === 'verified'
+            ? 'Verified'
+            : verificationStatus === 'pending'
+            ? 'Verification Pending'
+            : 'Unverified'}
+        </span>
+      </div>
+    );
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      
-      {/* User / Guest Header Banner */}
-      {currentUser ? (
-        <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 border border-stone-200/90 dark:border-stone-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6 transition-colors">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 flex items-center justify-center font-bold text-xl">
-              {currentUser.name.charAt(0)}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-serif font-bold text-stone-900 dark:text-white">
-                  {currentUser.name}
-                </h1>
-                {currentUser.verifiedIdentity && (
-                  <span title="Verified Identity">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 pb-24 transition-colors duration-200">
+      {/* Dashboard Header */}
+      <div className="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 pt-8 pb-0 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-900 text-white flex items-center justify-center font-bold text-2xl shadow-md">
+                {currentUser.name.charAt(0)}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold text-stone-900 dark:text-white">
+                    {currentUser.name}
+                  </h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    {currentUser.role}
                   </span>
-                )}
+                </div>
+                <p className="text-stone-500 dark:text-stone-400 text-sm">
+                  {currentUser.email} • {currentUser.phone}
+                </p>
               </div>
-              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                {currentUser.email} • {currentUser.phone} • <span className="capitalize">{currentUser.role} Account</span>
-              </p>
+            </div>
+
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              {currentUser.role === 'admin' && (
+                <button
+                  onClick={() => navigateTo('/admin')}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-900 text-white hover:bg-emerald-800 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Admin Desk
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  void logout();
+                  navigateTo('/');
+                }}
+                className="flex items-center gap-2 px-4 py-2 text-stone-600 dark:text-stone-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl font-medium transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
             </div>
           </div>
 
-          {/* Quick Stats Pill */}
-          <div className="flex items-center gap-3">
-            <div className="px-4 py-2 rounded-xl bg-stone-50 dark:bg-stone-800/80 border border-stone-100 dark:border-stone-700/60 text-center">
-              <div className="text-sm font-bold text-rose-600 dark:text-rose-400">{savedPropertyIds.length}</div>
-              <div className="text-[10px] text-stone-500 dark:text-stone-400">Saved</div>
-            </div>
-            <div className="px-4 py-2 rounded-xl bg-stone-50 dark:bg-stone-800/80 border border-stone-100 dark:border-stone-700/60 text-center">
-              <div className="text-sm font-bold text-stone-900 dark:text-white">{viewingRequests.length}</div>
-              <div className="text-[10px] text-stone-500 dark:text-stone-400">Viewings</div>
-            </div>
-            <div className="px-4 py-2 rounded-xl bg-stone-50 dark:bg-stone-800/80 border border-stone-100 dark:border-stone-700/60 text-center">
-              <div className="text-sm font-bold text-stone-900 dark:text-white">{enquiries.length}</div>
-              <div className="text-[10px] text-stone-500 dark:text-stone-400">Enquiries</div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Guest Explorer Banner */
-        <div className="bg-white dark:bg-stone-900 rounded-2xl p-6 border border-stone-200/90 dark:border-stone-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6 transition-colors">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 flex items-center justify-center font-bold text-xl">
-              <Compass className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-serif font-bold text-stone-900 dark:text-white">
-                  Property Portfolio & Favorites
-                </h1>
-                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400">
-                  Guest Mode
-                </span>
-              </div>
-              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                Tracking {savedPropertyIds.length} saved {savedPropertyIds.length === 1 ? 'property' : 'properties'} on this device. Sign in to sync across devices and book viewings.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
+          {/* Navigation Tabs */}
+          <div className="flex gap-8 overflow-x-auto scrollbar-none">
             <button
-              onClick={() => openAuthModal('Sign in to sync your saved properties across all devices and message property owners.')}
-              className="py-2.5 px-5 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
+              onClick={() => setActiveTab('saved')}
+              className={`pb-4 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'saved'
+                  ? 'border-emerald-900 dark:border-emerald-500 text-emerald-900 dark:text-emerald-400'
+                  : 'border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+              }`}
             >
-              Sign In / Register
+              <Heart className="w-4 h-4" />
+              Saved Properties
+              <span className="bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 py-0.5 px-2 rounded-full text-xs">
+                {savedProperties.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('viewings')}
+              className={`pb-4 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'viewings'
+                  ? 'border-emerald-900 dark:border-emerald-500 text-emerald-900 dark:text-emerald-400'
+                  : 'border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Viewing Schedule
+              <span className="bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 py-0.5 px-2 rounded-full text-xs">
+                {viewingRequests.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('listings')}
+              className={`pb-4 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'listings'
+                  ? 'border-emerald-900 dark:border-emerald-500 text-emerald-900 dark:text-emerald-400'
+                  : 'border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+              }`}
+            >
+              <Building className="w-4 h-4" />
+              My Listings
+              <span className="bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 py-0.5 px-2 rounded-full text-xs">
+                {userListings.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('enquiries')}
+              className={`pb-4 font-medium text-sm flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'enquiries'
+                  ? 'border-emerald-900 dark:border-emerald-500 text-emerald-900 dark:text-emerald-400'
+                  : 'border-transparent text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Enquiries
+              <span className="bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 py-0.5 px-2 rounded-full text-xs">
+                {enquiries.length}
+              </span>
             </button>
           </div>
         </div>
-      )}
-
-      {/* Navigation Tabs */}
-      <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-3 flex-wrap gap-4">
-        <div className="flex items-center gap-2 overflow-x-auto">
-          {/* TAB 1: SAVED PROPERTIES */}
-          <button
-            onClick={() => setActiveTab('saved')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              activeTab === 'saved'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Heart className={`w-3.5 h-3.5 ${savedPropertyIds.length > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
-            <span>Saved Properties ({savedPropertyIds.length})</span>
-          </button>
-
-          {/* TAB 2: SCHEDULED VIEWINGS */}
-          <button
-            onClick={() => setActiveTab('viewings')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              activeTab === 'viewings'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Scheduled Viewings ({viewingRequests.length})</span>
-          </button>
-
-          {/* TAB 3: MY ENQUIRIES */}
-          <button
-            onClick={() => setActiveTab('enquiries')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              activeTab === 'enquiries'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>My Enquiries ({enquiries.length})</span>
-          </button>
-
-          {/* TAB 4: RECOMMENDED */}
-          <button
-            onClick={() => setActiveTab('recommended')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              activeTab === 'recommended'
-                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 shadow-xs'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-800'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Recommended for You</span>
-          </button>
-        </div>
-
-        {/* Comparison Trigger if in saved tab */}
-        {activeTab === 'saved' && savedProperties.length >= 2 && (
-          <button
-            onClick={() => setIsCompareModalOpen(true)}
-            disabled={compareIds.length < 2}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-              compareIds.length >= 2 
-                ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs cursor-pointer' 
-                : 'bg-stone-100 dark:bg-stone-800 text-stone-400 cursor-not-allowed'
-            }`}
-          >
-            <Columns className="w-3.5 h-3.5" />
-            <span>Compare Selected ({compareIds.length}/3)</span>
-          </button>
-        )}
       </div>
 
-      {/* Tab Content 1: SAVED PROPERTIES */}
-      {activeTab === 'saved' && (
-        <div className="space-y-6">
-          
-          {/* Saved Header Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-stone-900 p-4 rounded-xl border border-stone-200/90 dark:border-stone-800">
-            <div>
-              <h2 className="text-base font-serif font-bold text-stone-900 dark:text-white flex items-center gap-2">
-                <Heart className="w-4 h-4 text-rose-500 fill-rose-500" />
-                <span>Saved Listings & Preferences</span>
-              </h2>
-              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                {savedProperties.length} {savedProperties.length === 1 ? 'listing' : 'listings'} saved • Total Portfolio: <strong className="text-stone-800 dark:text-stone-200">{formatUGX(totalSavedValue, true)}</strong>
-              </p>
-            </div>
-
-            {savedPropertyIds.length > 0 && (
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* Transaction filter chips */}
-                <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-lg text-xs">
-                  <button
-                    onClick={() => setSavedTransactionFilter('all')}
-                    className={`px-2.5 py-1 rounded font-medium transition-colors ${
-                      savedTransactionFilter === 'all'
-                        ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
-                        : 'text-stone-500 hover:text-stone-900 dark:hover:text-white'
-                    }`}
-                  >
-                    All
-                  </button>
-                  <button
-                    onClick={() => setSavedTransactionFilter('buy')}
-                    className={`px-2.5 py-1 rounded font-medium transition-colors ${
-                      savedTransactionFilter === 'buy'
-                        ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
-                        : 'text-stone-500 hover:text-stone-900 dark:hover:text-white'
-                    }`}
-                  >
-                    For Sale
-                  </button>
-                  <button
-                    onClick={() => setSavedTransactionFilter('rent')}
-                    className={`px-2.5 py-1 rounded font-medium transition-colors ${
-                      savedTransactionFilter === 'rent'
-                        ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
-                        : 'text-stone-500 hover:text-stone-900 dark:hover:text-white'
-                    }`}
-                  >
-                    For Rent
-                  </button>
+      {/* Tab Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        {activeTab === 'saved' && (
+          <div>
+            {savedProperties.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {savedProperties.map((property) => (
+                  <PropertyCard key={property.id} property={property} />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center max-w-lg mx-auto mt-8">
+                <div className="w-16 h-16 bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Heart className="w-8 h-8" />
                 </div>
-
-                {/* Sort dropdown */}
-                <select
-                  value={savedSortBy}
-                  onChange={(e) => setSavedSortBy(e.target.value as any)}
-                  className="text-xs p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-200"
-                >
-                  <option value="newest">Recently Saved</option>
-                  <option value="price_asc">Price: Low to High</option>
-                  <option value="price_desc">Price: High to Low</option>
-                </select>
-
-                {/* Clear all */}
+                <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-2">
+                  No saved properties yet
+                </h3>
+                <p className="text-stone-500 dark:text-stone-400 mb-8">
+                  Tap the heart icon on any property across Kampala, Wakiso, or Entebbe to save it here for easy comparison.
+                </p>
                 <button
-                  onClick={handleClearAllSaved}
-                  className="text-xs text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 cursor-pointer"
-                  title="Remove all saved properties"
+                  onClick={() => navigateTo('/search')}
+                  className="px-6 py-3 bg-emerald-900 text-white rounded-xl font-medium hover:bg-emerald-800 transition-colors inline-flex items-center gap-2"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Clear All</span>
+                  Explore Properties <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             )}
           </div>
+        )}
 
-          {/* Properties Grid or Empty State */}
-          {savedProperties.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-4 max-w-lg mx-auto">
-              <div className="w-14 h-14 bg-rose-50 dark:bg-rose-950/50 text-rose-500 rounded-full flex items-center justify-center mx-auto shadow-xs">
-                <Heart className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
-                  No saved properties yet
-                </h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 max-w-sm mx-auto leading-relaxed">
-                  Click the heart icon on any property card or property details page to save homes, compare pricing, and track inspection availability.
-                </p>
-              </div>
-              <button
-                onClick={() => navigateTo('/search')}
-                className="py-2.5 px-6 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
-              >
-                Explore Properties in Uganda
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {savedProperties.map(property => (
-                <div key={property.id} className="relative flex flex-col group">
-                  {/* Select for comparison checkbox */}
-                  <label className="absolute top-3 right-12 z-20 bg-stone-900/85 backdrop-blur-xs text-white text-[11px] font-medium px-2 py-1 rounded-md flex items-center gap-1.5 cursor-pointer hover:bg-stone-900">
-                    <input
-                      type="checkbox"
-                      checked={compareIds.includes(property.id)}
-                      onChange={() => toggleCompare(property.id)}
-                      className="rounded text-emerald-600 focus:ring-0"
-                    />
-                    <span>Compare</span>
-                  </label>
-                  <PropertyCard property={property} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        {activeTab === 'viewings' && (
+          <div className="max-w-4xl">
+            <h2 className="text-lg font-bold text-stone-900 dark:text-white mb-6">
+              Scheduled Property Viewings
+            </h2>
+            {viewingRequests.length > 0 ? (
+              <div className="space-y-4">
+                {viewingRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-4 sm:p-6 flex flex-col sm:flex-row gap-6 items-start sm:items-center justify-between shadow-sm"
+                  >
+                    <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full">
+                      {request.propertyImage ? (
+                        <img
+                          src={request.propertyImage}
+                          alt={request.propertyTitle}
+                          className="w-full sm:w-32 h-32 sm:h-24 object-cover rounded-xl shrink-0 cursor-pointer"
+                          onClick={() => handlePropertyClick(request.propertyId)}
+                        />
+                      ) : (
+                        <div
+                          onClick={() => handlePropertyClick(request.propertyId)}
+                          className="w-full sm:w-32 h-32 sm:h-24 bg-stone-200 dark:bg-stone-800 rounded-xl shrink-0 cursor-pointer flex items-center justify-center text-xs text-stone-500"
+                        >
+                          No image
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          {getStatusBadge(request.status)}
+                          <span className="text-xs text-stone-400 dark:text-stone-500">
+                            Requested {request.dateRequested}
+                          </span>
+                        </div>
+                        <h3
+                          className="font-bold text-stone-900 dark:text-white text-lg hover:text-emerald-800 dark:hover:text-emerald-400 cursor-pointer transition-colors mb-1"
+                          onClick={() => handlePropertyClick(request.propertyId)}
+                        >
+                          {request.propertyTitle}
+                        </h3>
+                        <p className="text-sm text-stone-500 dark:text-stone-400 flex items-center gap-1 mb-3">
+                          <MapPin className="w-3.5 h-3.5" /> {request.propertyLocation}
+                        </p>
 
-      {/* Tab Content 2: Scheduled Viewings */}
-      {activeTab === 'viewings' && (
-        <div className="space-y-4">
-          {!currentUser ? (
-            <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-4 max-w-md mx-auto">
-              <Lock className="w-8 h-8 text-stone-400 mx-auto" />
-              <div className="space-y-1">
-                <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-                  Sign in to view scheduled viewings
-                </h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Scheduled viewings are linked to your registered profile to coordinate on-site appointments.
-                </p>
-              </div>
-              <button
-                onClick={() => openAuthModal('Sign in to view and manage your scheduled property viewings.')}
-                className="py-2.5 px-5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-xl"
-              >
-                Sign In or Register
-              </button>
-            </div>
-          ) : viewingRequests.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-3">
-              <Calendar className="w-8 h-8 text-stone-300 dark:text-stone-600 mx-auto" />
-              <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-                No scheduled viewings
-              </h3>
-              <p className="text-xs text-stone-500 dark:text-stone-400 max-w-sm mx-auto">
-                Request an in-person or guided property viewing from any property page to have a verified representative meet you on site.
-              </p>
-              <button
-                onClick={() => navigateTo('/search')}
-                className="py-2 px-4 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-lg"
-              >
-                Browse Listings
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {viewingRequests.map(v => (
-                <div key={v.id} className="p-5 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 shadow-xs space-y-4 transition-colors">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                        v.status === 'Confirmed' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
-                        v.status === 'Completed' ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300' :
-                        v.status === 'Cancelled' ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300' :
-                        'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                      }`}>
-                        {v.status}
-                      </span>
-                      <h4 className="text-sm font-bold text-stone-900 dark:text-white mt-1.5 line-clamp-1">
-                        {v.propertyTitle}
-                      </h4>
-                      <p className="text-xs text-stone-500 dark:text-stone-400">
-                        {v.propertyLocation}
-                      </p>
+                        <div className="flex flex-wrap gap-4 text-sm bg-stone-50 dark:bg-stone-800/50 p-3 rounded-xl border border-stone-100 dark:border-stone-800">
+                          <div className="flex items-center gap-1.5 text-stone-700 dark:text-stone-300 font-medium">
+                            <Calendar className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
+                            {request.preferredDate}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-stone-700 dark:text-stone-300 font-medium">
+                            <Clock className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
+                            {request.preferredTime}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-400">
+                            <Phone className="w-4 h-4 text-stone-400 dark:text-stone-500" />
+                            {request.customerPhone}
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="text-right text-xs font-semibold text-stone-900 dark:text-white">
-                      {formatUGX(v.propertyPrice, true)}
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/80 border border-stone-100 dark:border-stone-700/60 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between text-stone-600 dark:text-stone-300">
-                      <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5 text-stone-400" /> Date:</span>
-                      <span className="font-semibold text-stone-900 dark:text-white">{v.preferredDate}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-stone-600 dark:text-stone-300">
-                      <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-stone-400" /> Time:</span>
-                      <span className="font-semibold text-stone-900 dark:text-white">{v.preferredTime}</span>
-                    </div>
-                    {v.assignedAgentName && (
-                      <div className="flex items-center justify-between text-stone-600 dark:text-stone-300">
-                        <span className="flex items-center gap-1.5"><UserIcon className="w-3.5 h-3.5 text-stone-400" /> Agent:</span>
-                        <span className="font-semibold text-stone-900 dark:text-white">{v.assignedAgentName}</span>
+                    {request.status === 'Pending' && (
+                      <div className="flex sm:flex-col gap-2 w-full sm:w-auto shrink-0 border-t sm:border-t-0 pt-4 sm:pt-0 border-stone-100 dark:border-stone-800">
+                        <button
+                          onClick={() => {
+                            void updateViewingStatus(request.id, 'Confirmed');
+                          }}
+                          className="flex-1 sm:w-32 py-2 px-3 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 rounded-lg text-xs font-semibold transition-colors text-center"
+                        >
+                          Confirm (Demo)
+                        </button>
+                        <button
+                          onClick={() => {
+                            void cancelViewingRequest(request.id);
+                          }}
+                          className="flex-1 sm:w-32 py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-950/30 text-stone-600 dark:text-stone-400 hover:text-red-700 dark:hover:text-red-400 rounded-lg text-xs font-semibold transition-colors text-center"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     )}
                   </div>
-
-                  {v.status === 'Pending' && (
-                    <div className="flex justify-end pt-1">
-                      <button
-                        onClick={() => cancelViewingRequest(v.id)}
-                        className="text-xs text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
-                      >
-                        Cancel Request
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab Content 3: My Enquiries */}
-      {activeTab === 'enquiries' && (
-        <div className="space-y-4">
-          {!currentUser ? (
-            <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-4 max-w-md mx-auto">
-              <Lock className="w-8 h-8 text-stone-400 mx-auto" />
-              <div className="space-y-1">
-                <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-                  Sign in to view your inquiries
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center">
+                <Calendar className="w-12 h-12 text-stone-300 dark:text-stone-600 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-stone-900 dark:text-white mb-2">
+                  No viewings scheduled
                 </h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Direct messages sent to property representatives are securely archived in your account.
+                <p className="text-stone-500 dark:text-stone-400 mb-6">
+                  When you request to view a property, your schedule and confirmation status will appear here.
+                </p>
+                <button
+                  onClick={() => navigateTo('/search')}
+                  className="px-6 py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 rounded-xl font-medium hover:bg-stone-800 dark:hover:bg-stone-100 transition-colors"
+                >
+                  Browse Properties
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'listings' && (
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-lg font-bold text-stone-900 dark:text-white">
+                  Managed Properties
+                </h2>
+                <p className="text-sm text-stone-500 dark:text-stone-400">
+                  Properties you have listed or manage on Reality Estates.
                 </p>
               </div>
               <button
-                onClick={() => openAuthModal('Sign in to view messages and direct representative responses.')}
-                className="py-2.5 px-5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-xl"
+                onClick={() => navigateTo('/list-property')}
+                className="px-5 py-2.5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl font-medium transition-colors inline-flex items-center gap-2 self-start"
               >
-                Sign In or Register
+                <Plus className="w-4 h-4" /> Add New Listing
               </button>
             </div>
-          ) : enquiries.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-3">
-              <MessageSquare className="w-8 h-8 text-stone-300 dark:text-stone-600 mx-auto" />
-              <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-                No active enquiries
-              </h3>
-              <p className="text-xs text-stone-500 dark:text-stone-400 max-w-sm mx-auto">
-                Messages sent to property owners and listing agents appear here.
-              </p>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 overflow-hidden shadow-xs transition-colors">
-              <div className="divide-y divide-stone-100 dark:divide-stone-800">
-                {enquiries.map(enq => (
-                  <div key={enq.id} className="p-5 space-y-2 hover:bg-stone-50 dark:hover:bg-stone-800/40 transition-colors">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          enq.status === 'Contacted' || enq.status === 'Viewing Scheduled' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
-                          enq.status === 'Closed' ? 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300' :
-                          'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                        }`}>
-                          {enq.status}
-                        </span>
-                        <h4 className="text-sm font-bold text-stone-900 dark:text-white mt-1">
-                          {enq.propertyTitle}
-                        </h4>
-                        {enq.subject && (
-                          <div className="text-xs text-stone-600 dark:text-stone-300 font-medium">
-                            Subject: <span className="text-stone-800 dark:text-stone-100">{enq.subject}</span>
-                          </div>
+
+            {submissionFeedback && (
+              <div className="mb-6 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-900 dark:text-emerald-200 flex items-center justify-between">
+                <span>{submissionFeedback}</span>
+                <button
+                  onClick={() => setSubmissionFeedback(null)}
+                  className="text-xs underline ml-4"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
+            {userListings.length > 0 ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {userListings.map((property) => (
+                    <div key={property.id} className="flex flex-col">
+                      <PropertyCard property={property} />
+                      <div className="mt-2 px-3 py-2.5 bg-white dark:bg-stone-900 rounded-xl border border-stone-200/80 dark:border-stone-800 flex items-center justify-between gap-2">
+                        {getListingStatusBadge(
+                          property.listingStatus,
+                          property.verificationStatus
                         )}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => navigateTo(`/edit-property/${property.id}`)}
+                            className="px-2.5 py-1 border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          {property.listingStatus === 'draft' && (
+                            <button
+                              onClick={() => handleSubmitDraftForReview(property.id)}
+                              disabled={submittingPropertyId === property.id}
+                              className="px-3 py-1 bg-emerald-900 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Send className="w-3 h-3" />
+                              {submittingPropertyId === property.id
+                                ? 'Submitting...'
+                                : 'Submit for Review'}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-xs text-stone-400">
-                        Date: {enq.date}
-                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center">
+                <Building className="w-12 h-12 text-stone-300 dark:text-stone-600 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-stone-900 dark:text-white mb-2">
+                  You haven't listed any properties
+                </h3>
+                <p className="text-stone-500 dark:text-stone-400 mb-6 max-w-md mx-auto">
+                  Reach thousands of verified buyers and tenants looking for prime real estate in Uganda.
+                </p>
+                <button
+                  onClick={() => navigateTo('/list-property')}
+                  className="px-6 py-3 bg-emerald-900 text-white rounded-xl font-medium hover:bg-emerald-800 transition-colors inline-flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> List Your First Property
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'enquiries' && (
+          <div className="max-w-4xl">
+            <h2 className="text-lg font-bold text-stone-900 dark:text-white mb-6">
+              Property Enquiries & Leads
+            </h2>
+            {enquiries.length > 0 ? (
+              <div className="space-y-4">
+                {enquiries.map((enquiry) => (
+                  <div
+                    key={enquiry.id}
+                    className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-5 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            enquiry.status === 'New'
+                              ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : enquiry.status === 'Replied'
+                              ? 'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-300'
+                              : 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400'
+                          }`}
+                        >
+                          {enquiry.status}
+                        </span>
+                        <span className="text-xs text-stone-400">{enquiry.date}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {(['New', 'Replied', 'Archived'] as const).map((st) => (
+                          <button
+                            key={st}
+                            onClick={() => {
+                              void updateEnquiryStatus(enquiry.id, st);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                              enquiry.status === st
+                                ? 'bg-emerald-900 text-white border-emerald-900'
+                                : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-100'
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <p className="text-xs text-stone-600 dark:text-stone-300 bg-stone-50 dark:bg-stone-800 p-3 rounded-lg border border-stone-100 dark:border-stone-700/60 italic">
-                      "{enq.message}"
+                    <h3
+                      onClick={() => handlePropertyClick(enquiry.propertyId)}
+                      className="font-bold text-stone-900 dark:text-white hover:text-emerald-800 cursor-pointer"
+                    >
+                      {enquiry.propertyTitle}
+                    </h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      From: <strong>{enquiry.customerName}</strong> ({enquiry.customerPhone})
+                      {enquiry.customerEmail ? ` • ${enquiry.customerEmail}` : ''}
                     </p>
-
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between pt-1">
-                      <span>Assigned Representative: <strong className="text-stone-800 dark:text-stone-200">{enq.assignedRep || 'Pearl Prime Desk'}</strong></span>
-                      <span>Phone: {enq.customerPhone}</span>
-                    </div>
+                    <p className="text-sm text-stone-700 dark:text-stone-300 mt-3 bg-stone-50 dark:bg-stone-800/60 p-3 rounded-xl">
+                      "{enquiry.message}"
+                    </p>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab Content 4: Recommended Properties */}
-      {activeTab === 'recommended' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {recommendedProperties.map(property => (
-              <PropertyCard key={property.id} property={property} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Side-by-Side Comparison Modal */}
-      {isCompareModalOpen && propertiesToCompare.length >= 2 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-stone-900 rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 overflow-y-auto max-h-[90vh]">
-            <div className="flex items-center justify-between pb-4 border-b border-stone-200 dark:border-stone-800">
-              <div>
-                <h3 className="text-lg font-serif font-bold text-stone-900 dark:text-white">
-                  Property Comparison Matrix
+            ) : (
+              <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center">
+                <MessageSquare className="w-12 h-12 text-stone-300 dark:text-stone-600 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-stone-900 dark:text-white mb-2">
+                  No enquiries yet
                 </h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Side-by-side evaluation of your selected listings
+                <p className="text-stone-500 dark:text-stone-400">
+                  Customer messages about your properties will appear here.
                 </p>
               </div>
-              <button
-                onClick={() => setIsCompareModalOpen(false)}
-                className="p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-full cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Comparison Table */}
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-stone-200 dark:border-stone-800">
-                    <th className="p-3 text-stone-400 font-medium">Metric</th>
-                    {propertiesToCompare.map(p => (
-                      <th key={p.id} className="p-3 font-serif font-bold text-stone-900 dark:text-white min-w-[200px]">
-                        <div className="line-clamp-1">{p.title}</div>
-                        <div className="text-[11px] font-sans font-normal text-stone-500">{p.location}</div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Price</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3 font-bold text-stone-900 dark:text-white">
-                        {formatUGX(p.price)}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Transaction</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3 uppercase tracking-wider text-[11px] font-semibold">
-                        {p.transaction === 'buy' ? 'For Sale' : 'For Rent'}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Type</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3">{p.propertyType}</td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Bedrooms / Baths</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3">
-                        {p.bedrooms > 0 ? `${p.bedrooms} Beds, ` : ''}{p.bathrooms > 0 ? `${p.bathrooms} Baths` : 'N/A'}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Plot / Size</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3">
-                        {p.landSizeDecimals ? `${p.landSizeDecimals} Decimals` : p.buildingSizeSqm ? `${p.buildingSizeSqm} m²` : '—'}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Tenure</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3">{p.tenure || 'N/A'}</td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Verification</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3">
-                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded ${
-                          p.verificationStatus === 'verified' 
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
-                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                        }`}>
-                          <ShieldCheck className="w-3 h-3" />
-                          {p.verificationStatus}
-                        </span>
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-stone-500 dark:text-stone-400 font-semibold">Action</td>
-                    {propertiesToCompare.map(p => (
-                      <td key={p.id} className="p-3">
-                        <button
-                          onClick={() => {
-                            setIsCompareModalOpen(false);
-                            navigateTo(`/properties/${p.slug}`);
-                          }}
-                          className="py-1.5 px-3 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-semibold"
-                        >
-                          View Listing
-                        </button>
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setIsCompareModalOpen(false)}
-                className="py-2 px-5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-lg cursor-pointer"
-              >
-                Close Comparison
-              </button>
-            </div>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* 1-Click Demo Profiles Footer for Easy Testing */}
-      {!currentUser && (
-        <div className="pt-8 border-t border-stone-200 dark:border-stone-800">
-          <p className="text-xs uppercase tracking-wider font-semibold text-stone-400 dark:text-stone-500 mb-3">
-            Quick Test: Switch to a Demo Profile
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            {DEMO_USERS.map(user => (
-              <button
-                key={user.id}
-                onClick={() => loginAs(user)}
-                className="p-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 hover:border-stone-400 dark:hover:border-stone-700 text-stone-800 dark:text-stone-200 transition-colors text-left cursor-pointer"
-              >
-                <div className="font-semibold truncate">{user.name}</div>
-                <div className="text-[10px] text-stone-500 capitalize">{user.role} Account</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+        )}
+      </div>
     </div>
   );
 };
