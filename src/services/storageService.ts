@@ -9,14 +9,21 @@ import {
   generateUuid,
   getRequiredSupabaseClient,
   isSupabaseConfigured,
-  PROPERTY_IMAGES_BUCKET,
-  supabase
+  PROPERTY_IMAGES_BUCKET
 } from '../lib/supabase';
 
 /**
- * Accepted MIME types and canonical file extensions for property photographs.
+ * Allowed MIME types and extensions for property photographs.
+ * Only JPEG, PNG, and WebP are accepted.
  */
-export const ALLOWED_IMAGE_MIME_TYPES: Record<string, 'jpg' | 'png' | 'webp'> = {
+export const ALLOWED_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp'
+] as const;
+
+export const ALLOWED_IMAGE_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/png': 'png',
@@ -24,51 +31,63 @@ export const ALLOWED_IMAGE_MIME_TYPES: Record<string, 'jpg' | 'png' | 'webp'> = 
 };
 
 /**
- * Maximum client-side property photograph size: 5 MB (5,242,880 bytes).
+ * Sensible maximum client-side file size: 5 MB per photograph.
  */
-export const MAX_PROPERTY_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_PROPERTY_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 
-export function isBlobUrl(url: string | undefined | null): boolean {
-  if (!url) return false;
-  return url.trim().toLowerCase().startsWith('blob:');
-}
-
-export function isValidPersistedImageUrl(url: string | undefined | null): boolean {
-  if (!url) return false;
+/**
+ * Rejects any browser-local `blob:` or `data:` URLs from being treated as permanent URLs.
+ */
+export function isPermanentImageUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
-  if (isBlobUrl(trimmed) || trimmed.toLowerCase().startsWith('data:')) {
-    return false;
-  }
-  return /^https?:\/\/.+/i.test(trimmed) || trimmed.startsWith('/');
+  if (!trimmed) return false;
+  if (trimmed.toLowerCase().startsWith('blob:')) return false;
+  if (trimmed.toLowerCase().startsWith('data:')) return false;
+  return /^https?:\/\/.+/i.test(trimmed);
 }
 
-function sanitizePathSegment(segment: string): string {
-  return segment.replace(/[^a-zA-Z0-9_-]/g, '').trim() || generateUuid();
+/**
+ * Filters a string array of image URLs so that ONLY permanent HTTP/HTTPS URLs remain.
+ * Never allows `blob:` or `data:` URLs into persistent state.
+ */
+export function filterPermanentImageUrls(urls: string[]): string[] {
+  if (!Array.isArray(urls)) return [];
+  return urls.map((u) => (typeof u === 'string' ? u.trim() : '')).filter(isPermanentImageUrl);
 }
 
+/**
+ * Maps a database `property_images` row into the frontend `PersistedPropertyImage` model.
+ * Columns in `public.property_images`:
+ * `id`, `property_id`, `storage_path`, `public_url`, `sort_order`, `alt_text`, `created_at`
+ */
 export function mapRowToPersistedImage(
   row: PropertyImageRow,
-  fallbackUrlResolver: (path: string) => string
+  resolvePublicUrl: (storagePath: string) => string
 ): PersistedPropertyImage {
   const storagePath = row.storage_path || undefined;
+  const rawUrl = row.public_url || row.url || row.image_url || '';
   const resolvedUrl =
-    row.public_url ||
-    row.image_url ||
-    row.url ||
-    (storagePath ? fallbackUrlResolver(storagePath) : '');
+    isPermanentImageUrl(rawUrl)
+      ? rawUrl
+      : storagePath
+      ? resolvePublicUrl(storagePath)
+      : '';
+
+  const displayOrder =
+    typeof row.sort_order === 'number'
+      ? row.sort_order
+      : typeof row.display_order === 'number'
+      ? row.display_order
+      : 0;
 
   return {
-    id: String(row.id),
-    propertyId: String(row.property_id),
+    id: row.id,
+    propertyId: row.property_id,
     storagePath,
     url: resolvedUrl,
-    displayOrder:
-      typeof row.display_order === 'number'
-        ? row.display_order
-        : typeof row.sort_order === 'number'
-        ? row.sort_order
-        : 0,
-    altText: row.alt_text || row.caption || undefined,
+    displayOrder,
+    altText: row.alt_text ?? row.caption ?? undefined,
     createdAt: row.created_at
   };
 }
@@ -79,30 +98,30 @@ class StorageService implements IStorageService {
   }
 
   /**
-   * Validates a local File before preview or upload:
-   * - Accepts only JPEG, PNG, and WebP
-   * - Rejects unsupported MIME types
-   * - Enforces 5 MB maximum file size
+   * Validates that a File is a supported photograph (JPEG, PNG, or WebP)
+   * and within the 5 MB client-side size limit.
    */
   public validatePropertyImageFile(file: File): void {
     if (!file) {
-      throw new ServiceError('No image file provided.', 'VALIDATION_ERROR', 400);
+      throw new ServiceError('No image file provided.', 'INVALID_FILE_TYPE', 400);
     }
 
-    const normalizedMime = (file.type || '').toLowerCase();
-    if (!ALLOWED_IMAGE_MIME_TYPES[normalizedMime]) {
+    const mimeType = (file.type || '').toLowerCase();
+    const extensionMatch = file.name.toLowerCase().match(/\.(jpe?g|png|webp)$/);
+    const isMimeAllowed = (ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
+
+    if (!isMimeAllowed && !extensionMatch) {
       throw new ServiceError(
-        `Unsupported file format for "${file.name}" (${file.type || 'unknown'}). Only JPEG, PNG, and WebP images are accepted.`,
-        'VALIDATION_ERROR',
-        400,
-        { file: 'Accepted formats: JPEG (.jpg), PNG (.png), WebP (.webp)' }
+        `Unsupported file format for "${file.name}". Please upload JPEG (.jpg), PNG (.png), or WebP (.webp) photographs only.`,
+        'INVALID_FILE_TYPE',
+        400
       );
     }
 
     if (file.size <= 0) {
       throw new ServiceError(
-        `Image file "${file.name}" is empty.`,
-        'VALIDATION_ERROR',
+        `The selected file "${file.name}" is empty (0 bytes).`,
+        'INVALID_FILE_TYPE',
         400
       );
     }
@@ -110,219 +129,171 @@ class StorageService implements IStorageService {
     if (file.size > MAX_PROPERTY_IMAGE_BYTES) {
       const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
       throw new ServiceError(
-        `Image "${file.name}" (${sizeMb} MB) exceeds the 5 MB maximum file size limit.`,
-        'VALIDATION_ERROR',
-        400,
-        { file: 'Maximum allowed file size is 5 MB per photo' }
+        `"${file.name}" (${sizeMb} MB) exceeds the 5 MB maximum photograph size.`,
+        'FILE_TOO_LARGE',
+        400
       );
     }
   }
 
   /**
-   * Generates a collision-resistant Supabase Storage object path:
+   * Generates a unique, collision-resistant storage path:
    * `properties/{propertyId}/{uuid}.{extension}`
    * Never uses the original user filename as the storage path.
    */
   public buildPropertyImageStoragePath(propertyId: string, file: File): string {
-    this.validatePropertyImageFile(file);
-    const safePropertyId = sanitizePathSegment(propertyId);
-    const extension = ALLOWED_IMAGE_MIME_TYPES[file.type.toLowerCase()] || 'jpg';
-    const imageUuid = generateUuid();
-    return `properties/${safePropertyId}/${imageUuid}.${extension}`;
-  }
-
-  /**
-   * Resolves a Supabase Storage path into a permanent public URL.
-   */
-  public getPropertyImageUrl(path: string): string {
-    const trimmed = (path || '').trim();
-    if (!trimmed || isBlobUrl(trimmed)) return '';
-    if (/^https?:\/\/.+/i.test(trimmed)) {
-      return trimmed;
-    }
-
-    if (supabase) {
-      const { data } = supabase.storage
-        .from(PROPERTY_IMAGES_BUCKET)
-        .getPublicUrl(trimmed);
-      return data.publicUrl;
-    }
-
-    return '';
-  }
-
-  /**
-   * Inserts a row into `property_images`, adapting resiliently to standard column
-   * naming conventions (`url` vs `image_url` vs `public_url`, `display_order` vs `sort_order`).
-   */
-  private async insertPropertyImageRow(params: {
-    id: string;
-    propertyId: string;
-    storagePath: string | null;
-    publicUrl: string;
-    displayOrder: number;
-    altText?: string;
-  }): Promise<PropertyImageRow | null> {
-    const client = getRequiredSupabaseClient();
-
-    const candidatePayloads: Record<string, unknown>[] = [
-      {
-        id: params.id,
-        property_id: params.propertyId,
-        storage_path: params.storagePath,
-        url: params.publicUrl,
-        display_order: params.displayOrder,
-        alt_text: params.altText ?? null
-      },
-      {
-        id: params.id,
-        property_id: params.propertyId,
-        storage_path: params.storagePath,
-        image_url: params.publicUrl,
-        display_order: params.displayOrder,
-        alt_text: params.altText ?? null
-      },
-      {
-        id: params.id,
-        property_id: params.propertyId,
-        storage_path: params.storagePath,
-        public_url: params.publicUrl,
-        sort_order: params.displayOrder,
-        caption: params.altText ?? null
-      },
-      {
-        id: params.id,
-        property_id: params.propertyId,
-        storage_path: params.storagePath,
-        display_order: params.displayOrder
-      }
-    ];
-
-    let lastError: { message: string; code?: string } | null = null;
-
-    for (const payload of candidatePayloads) {
-      const { data, error } = await client
-        .from('property_images')
-        .insert(payload)
-        .select('*')
-        .maybeSingle();
-
-      if (!error) {
-        return (data as PropertyImageRow) || null;
-      }
-
-      lastError = error;
-      const isColumnMismatch =
-        error.code === 'PGRST204' ||
-        error.code === '42703' ||
-        /column .* does not exist|Could not find the .* column/i.test(error.message);
-
-      if (!isColumnMismatch) {
-        break;
-      }
-    }
-
-    throw new ServiceError(
-      `Image uploaded to storage, but saving the property_images database record failed: ${
-        lastError?.message || 'Unknown database error'
-      }`,
-      'STORAGE_ERROR',
-      500
-    );
-  }
-
-  /**
-   * Uploads a single validated property image to Supabase Storage at
-   * `properties/{propertyId}/{uuid}.{extension}` and creates the corresponding
-   * `property_images` row in PostgreSQL.
-   */
-  public async uploadPropertyImage(
-    file: File,
-    propertyId: string,
-    options?: UploadPropertyImageOptions
-  ): Promise<PersistedPropertyImage> {
-    if (!propertyId || !propertyId.trim()) {
+    const cleanPropertyId = propertyId.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!cleanPropertyId) {
       throw new ServiceError(
-        'A valid property ID is required before uploading property photographs.',
+        'A valid property ID is required before generating a storage path.',
         'VALIDATION_ERROR',
         400
       );
     }
 
+    const mimeType = (file.type || '').toLowerCase();
+    let extension = ALLOWED_IMAGE_EXTENSIONS[mimeType];
+
+    if (!extension) {
+      const extMatch = file.name.toLowerCase().match(/\.(jpe?g|png|webp)$/);
+      if (extMatch) {
+        extension = extMatch[1] === 'jpeg' ? 'jpg' : extMatch[1];
+      } else {
+        extension = 'jpg';
+      }
+    }
+
+    const imageUuid = generateUuid();
+    return `properties/${cleanPropertyId}/${imageUuid}.${extension}`;
+  }
+
+  /**
+   * Resolves a permanent public URL from a Supabase Storage object path.
+   */
+  public getPropertyImageUrl(path: string): string {
+    if (!path) return '';
+    if (isPermanentImageUrl(path)) {
+      return path;
+    }
+
+    const client = getRequiredSupabaseClient();
+    const cleanPath = path.replace(/^\/+/, '');
+    const { data } = client.storage.from(PROPERTY_IMAGES_BUCKET).getPublicUrl(cleanPath);
+    return data.publicUrl;
+  }
+
+  /**
+   * Inserts a `property_images` row in Supabase PostgreSQL.
+   */
+  private async insertPropertyImageRow(params: {
+    id: string;
+    propertyId: string;
+    storagePath: string;
+    publicUrl: string;
+    displayOrder: number;
+    altText?: string | null;
+  }): Promise<PropertyImageRow> {
+    const client = getRequiredSupabaseClient();
+
+    const payload = {
+      id: params.id,
+      property_id: params.propertyId,
+      storage_path: params.storagePath,
+      public_url: params.publicUrl,
+      sort_order: params.displayOrder,
+      alt_text: params.altText ?? null
+    };
+
+    const { data, error } = await client
+      .from('property_images')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new ServiceError(
+        'Unable to upload property images. Please try again.',
+        'UPLOAD_FAILED',
+        500
+      );
+    }
+
+    return data as PropertyImageRow;
+  }
+
+  /**
+   * Uploads a single property image to Supabase Storage (`property-images` bucket)
+   * at `properties/{propertyId}/{uuid}.{extension}` with `upsert: false`,
+   * then creates the corresponding `property_images` database record.
+   */
+  public async uploadPropertyImage(
+    file: File,
+    propertyId: string,
+    options: UploadPropertyImageOptions = {}
+  ): Promise<PersistedPropertyImage> {
     this.validatePropertyImageFile(file);
+
+    if (!propertyId || !propertyId.trim()) {
+      throw new ServiceError(
+        'Cannot upload property image before a valid property ID is assigned.',
+        'VALIDATION_ERROR',
+        400
+      );
+    }
 
     const client = getRequiredSupabaseClient();
     const storagePath = this.buildPropertyImageStoragePath(propertyId, file);
-    const displayOrder = options?.displayOrder ?? 0;
-    const altText = options?.altText?.trim() || undefined;
+    const displayOrder = options.displayOrder ?? 0;
 
-    options?.onProgress?.(20);
+    options.onProgress?.(15);
 
     const { error: uploadError } = await client.storage
       .from(PROPERTY_IMAGES_BUCKET)
       .upload(storagePath, file, {
         cacheControl: '3600',
-        contentType: file.type,
-        upsert: false
+        upsert: false,
+        contentType: file.type || 'image/jpeg'
       });
 
     if (uploadError) {
       throw new ServiceError(
-        `Failed to upload "${file.name}" to Supabase Storage: ${uploadError.message}`,
-        'STORAGE_ERROR',
+        'Unable to upload property images. Please try again.',
+        'UPLOAD_FAILED',
         500
       );
     }
 
-    options?.onProgress?.(70);
+    options.onProgress?.(70);
 
     const publicUrl = this.getPropertyImageUrl(storagePath);
-    if (!publicUrl || isBlobUrl(publicUrl)) {
-      await client.storage.from(PROPERTY_IMAGES_BUCKET).remove([storagePath]);
-      throw new ServiceError(
-        `Could not resolve a permanent public URL for "${file.name}".`,
-        'STORAGE_ERROR',
-        500
-      );
-    }
-
-    const imageId = generateUuid();
-    const createdAt = new Date().toISOString();
+    const recordId = generateUuid();
 
     try {
-      const insertedRow = await this.insertPropertyImageRow({
-        id: imageId,
+      const dbRow = await this.insertPropertyImageRow({
+        id: recordId,
         propertyId,
         storagePath,
         publicUrl,
         displayOrder,
-        altText
+        altText: options.altText ?? file.name.replace(/\.[^/.]+$/, '')
       });
 
-      options?.onProgress?.(100);
-
-      if (insertedRow) {
-        return mapRowToPersistedImage(insertedRow, (p) => this.getPropertyImageUrl(p));
-      }
-
-      return {
-        id: imageId,
-        propertyId,
-        storagePath,
-        url: publicUrl,
-        displayOrder,
-        altText,
-        createdAt
-      };
-    } catch (dbErr) {
-      // Clean up orphaned object from Storage if database insert failed
-      await client.storage.from(PROPERTY_IMAGES_BUCKET).remove([storagePath]);
-      throw dbErr;
+      options.onProgress?.(100);
+      return mapRowToPersistedImage(dbRow, (p) => this.getPropertyImageUrl(p));
+    } catch (err) {
+      // Clean up the uploaded Storage object if database record creation failed
+      await client.storage.from(PROPERTY_IMAGES_BUCKET).remove([storagePath]).catch(() => {});
+      if (err instanceof ServiceError) throw err;
+      throw new ServiceError(
+        'Unable to upload property images. Please try again.',
+        'UPLOAD_FAILED',
+        500
+      );
     }
   }
 
   /**
-   * Sequentially uploads multiple files for a property while preserving display ordering.
+   * Sequentially uploads multiple files for a given property ID while preserving display order.
    */
   public async uploadPropertyImages(
     files: File[],
@@ -330,77 +301,77 @@ class StorageService implements IStorageService {
     startOrder = 0,
     onFileProgress?: (fileIndex: number, progressPercent: number) => void
   ): Promise<PersistedPropertyImage[]> {
-    if (!files || files.length === 0) return [];
+    if (!files.length) return [];
 
     // Validate all files upfront before starting network transfers
-    files.forEach((file) => this.validatePropertyImageFile(file));
+    files.forEach((f) => this.validatePropertyImageFile(f));
 
-    const uploaded: PersistedPropertyImage[] = [];
+    const uploadedRecords: PersistedPropertyImage[] = [];
+
     for (let index = 0; index < files.length; index++) {
       const file = files[index];
-      const result = await this.uploadPropertyImage(file, propertyId, {
-        displayOrder: startOrder + index,
-        onProgress: (pct) => onFileProgress?.(index, pct)
+      const displayOrder = startOrder + index;
+      const persisted = await this.uploadPropertyImage(file, propertyId, {
+        displayOrder,
+        onProgress: (percent) => onFileProgress?.(index, percent)
       });
-      uploaded.push(result);
+      uploadedRecords.push(persisted);
     }
 
-    return uploaded;
+    return uploadedRecords;
   }
 
   /**
-   * Deletes a property image from Supabase Storage and removes its `property_images` row.
+   * Deletes a property image from Supabase Storage (if `path` is a Storage object path)
+   * and deletes its corresponding row from the `property_images` table.
    */
   public async deletePropertyImage(
     path: string,
     imageRecordId?: string,
     propertyId?: string
   ): Promise<void> {
-    if (!isSupabaseConfigured() || !supabase) {
-      return;
-    }
+    const client = getRequiredSupabaseClient();
+    const cleanPath = (path || '').trim();
 
-    const trimmedPath = (path || '').trim();
-    if (trimmedPath && !/^https?:\/\/.+/i.test(trimmedPath)) {
-      const { error: storageError } = await supabase.storage
+    // 1. Delete from Supabase Storage if a storage object path is present
+    if (cleanPath && !/^https?:\/\//i.test(cleanPath)) {
+      const { error: storageError } = await client.storage
         .from(PROPERTY_IMAGES_BUCKET)
-        .remove([trimmedPath]);
+        .remove([cleanPath]);
 
       if (storageError) {
         throw new ServiceError(
-          `Failed to delete image from Supabase Storage: ${storageError.message}`,
-          'STORAGE_ERROR',
+          'Unable to delete the property image from storage. Please try again.',
+          'DELETE_FAILED',
           500
         );
       }
     }
 
+    // 2. Delete from `property_images` database table
     if (imageRecordId) {
-      let query = supabase.from('property_images').delete().eq('id', imageRecordId);
-      if (propertyId) {
-        query = query.eq('property_id', propertyId);
-      }
-      const { error: dbError } = await query;
+      const { error: dbError } = await client
+        .from('property_images')
+        .delete()
+        .eq('id', imageRecordId);
+
       if (dbError) {
         throw new ServiceError(
-          `Failed to delete property_images database record: ${dbError.message}`,
-          'STORAGE_ERROR',
+          'Unable to remove the property image record. Please try again.',
+          'DELETE_FAILED',
           500
         );
       }
-    } else if (trimmedPath) {
-      let query = supabase
-        .from('property_images')
-        .delete()
-        .eq('storage_path', trimmedPath);
+    } else if (cleanPath) {
+      let query = client.from('property_images').delete().eq('storage_path', cleanPath);
       if (propertyId) {
         query = query.eq('property_id', propertyId);
       }
       const { error: dbError } = await query;
       if (dbError) {
         throw new ServiceError(
-          `Failed to delete property_images database record by path: ${dbError.message}`,
-          'STORAGE_ERROR',
+          'Unable to remove the property image record. Please try again.',
+          'DELETE_FAILED',
           500
         );
       }
@@ -408,128 +379,82 @@ class StorageService implements IStorageService {
   }
 
   /**
-   * Fetches persisted images for a property from `property_images` ordered by `displayOrder`.
+   * Fetches ordered `PersistedPropertyImage` records for a property from `property_images`.
    */
   public async getPropertyImages(propertyId: string): Promise<PersistedPropertyImage[]> {
-    if (!propertyId || !isSupabaseConfigured() || !supabase) {
+    if (!propertyId) return [];
+    const client = getRequiredSupabaseClient();
+
+    const { data, error } = await client
+      .from('property_images')
+      .select('*')
+      .eq('property_id', propertyId)
+      .order('sort_order', { ascending: true });
+
+    if (error || !data) {
       return [];
     }
 
-    const { data, error } = await supabase
-      .from('property_images')
-      .select('*')
-      .eq('property_id', propertyId);
+    const mapped = (data as PropertyImageRow[])
+      .map((row) => mapRowToPersistedImage(row, (p) => this.getPropertyImageUrl(p)))
+      .filter((img) => isPermanentImageUrl(img.url));
 
-    if (error) {
-      throw new ServiceError(
-        `Failed to load property images: ${error.message}`,
-        'STORAGE_ERROR',
-        500
-      );
-    }
-
-    return (data || [])
-      .map((row) =>
-        mapRowToPersistedImage(row as PropertyImageRow, (p) =>
-          this.getPropertyImageUrl(p)
-        )
-      )
-      .sort((a, b) => a.displayOrder - b.displayOrder);
+    return mapped.sort((a, b) => a.displayOrder - b.displayOrder);
   }
 
   /**
-   * Persists external/preset image records into `property_images` when Supabase is configured.
+   * Persists external permanent HTTP/HTTPS image URLs in `property_images`.
    */
   public async savePropertyImageRecords(
     propertyId: string,
     images: PersistedPropertyImage[]
   ): Promise<PersistedPropertyImage[]> {
-    const validImages = images
-      .filter((img) => isValidPersistedImageUrl(img.url))
-      .map((img, idx) => ({
-        ...img,
+    const validImages = images.filter((img) => isPermanentImageUrl(img.url));
+    if (validImages.length === 0) return [];
+
+    const client = getRequiredSupabaseClient();
+    const saved: PersistedPropertyImage[] = [];
+
+    for (let idx = 0; idx < validImages.length; idx++) {
+      const img = validImages[idx];
+      const dbRow = await this.insertPropertyImageRow({
         id: img.id || generateUuid(),
         propertyId,
-        displayOrder: idx
-      }));
-
-    if (!isSupabaseConfigured() || !supabase || validImages.length === 0) {
-      return validImages;
-    }
-
-    const saved: PersistedPropertyImage[] = [];
-    for (const img of validImages) {
-      try {
-        const inserted = await this.insertPropertyImageRow({
-          id: img.id,
-          propertyId,
-          storagePath: img.storagePath ?? null,
-          publicUrl: img.url,
-          displayOrder: img.displayOrder,
-          altText: img.altText
-        });
-        if (inserted) {
-          saved.push(
-            mapRowToPersistedImage(inserted, (p) => this.getPropertyImageUrl(p))
-          );
-        } else {
-          saved.push(img);
-        }
-      } catch {
-        // If the record already exists or external URL insert is skipped by RLS in demo hybrid, keep valid URL reference
-        saved.push(img);
-      }
+        storagePath: img.storagePath || `properties/${propertyId}/external-${idx + 1}`,
+        publicUrl: img.url,
+        displayOrder: idx,
+        altText: img.altText ?? null
+      });
+      saved.push(mapRowToPersistedImage(dbRow, (p) => this.getPropertyImageUrl(p)));
     }
 
     return saved;
   }
 
   /**
-   * Updates `display_order` (or `sort_order`) for a property's persisted images in `property_images`.
+   * Updates `sort_order` in `property_images` to match `orderedImageIds`.
    */
   public async reorderPropertyImages(
     propertyId: string,
     orderedImageIds: string[]
   ): Promise<PersistedPropertyImage[]> {
-    if (!isSupabaseConfigured() || !supabase) {
-      return [];
-    }
+    if (!propertyId || orderedImageIds.length === 0) return [];
+    const client = getRequiredSupabaseClient();
 
-    for (let order = 0; order < orderedImageIds.length; order++) {
-      const imageId = orderedImageIds[order];
-      const { error } = await supabase
+    for (let index = 0; index < orderedImageIds.length; index++) {
+      const imageId = orderedImageIds[index];
+      const { error } = await client
         .from('property_images')
-        .update({ display_order: order })
+        .update({ sort_order: index })
         .eq('id', imageId)
         .eq('property_id', propertyId);
 
       if (error) {
-        const isColumnMismatch =
-          error.code === 'PGRST204' ||
-          error.code === '42703' ||
-          /display_order/i.test(error.message);
-
-        if (isColumnMismatch) {
-          const { error: fallbackError } = await supabase
-            .from('property_images')
-            .update({ sort_order: order })
-            .eq('id', imageId)
-            .eq('property_id', propertyId);
-
-          if (fallbackError) {
-            throw new ServiceError(
-              `Failed to update image display order: ${fallbackError.message}`,
-              'STORAGE_ERROR',
-              500
-            );
-          }
-        } else {
-          throw new ServiceError(
-            `Failed to update image display order: ${error.message}`,
-            'STORAGE_ERROR',
-            500
-          );
-        }
+        throw new ServiceError(
+          'Unable to update property image ordering. Please try again.',
+          'UNKNOWN_ERROR',
+          500
+        );
       }
     }
 
@@ -537,13 +462,7 @@ class StorageService implements IStorageService {
   }
 }
 
-export const storageService: IStorageService = new StorageService();
-
-/**
- * Clean named function exports for direct service consumption.
- */
-export const validatePropertyImageFile = (file: File): void =>
-  storageService.validatePropertyImageFile(file);
+export const storageService = new StorageService();
 
 export const uploadPropertyImage = (
   file: File,
@@ -551,14 +470,6 @@ export const uploadPropertyImage = (
   options?: UploadPropertyImageOptions
 ): Promise<PersistedPropertyImage> =>
   storageService.uploadPropertyImage(file, propertyId, options);
-
-export const uploadPropertyImages = (
-  files: File[],
-  propertyId: string,
-  startOrder?: number,
-  onFileProgress?: (fileIndex: number, progressPercent: number) => void
-): Promise<PersistedPropertyImage[]> =>
-  storageService.uploadPropertyImages(files, propertyId, startOrder, onFileProgress);
 
 export const deletePropertyImage = (
   path: string,
@@ -569,13 +480,3 @@ export const deletePropertyImage = (
 
 export const getPropertyImageUrl = (path: string): string =>
   storageService.getPropertyImageUrl(path);
-
-export const getPropertyImages = (
-  propertyId: string
-): Promise<PersistedPropertyImage[]> => storageService.getPropertyImages(propertyId);
-
-export const reorderPropertyImages = (
-  propertyId: string,
-  orderedImageIds: string[]
-): Promise<PersistedPropertyImage[]> =>
-  storageService.reorderPropertyImages(propertyId, orderedImageIds);

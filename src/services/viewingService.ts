@@ -4,108 +4,268 @@ import {
   ServiceError,
   UpdateViewingStatusInput
 } from '../types/api';
-import { ViewingRequest, ViewingStatus } from '../types/property';
-import { mockStorage } from '../mocks/mockStorage';
-import { isValidIsoDateString } from '../utils/formatters';
+import { TransactionType, ViewingRequest, ViewingStatus } from '../types/property';
+import { generateUuid, getRequiredSupabaseClient } from '../lib/supabase';
 
-const VALID_VIEWING_STATUSES: ViewingStatus[] = [
-  'Pending',
-  'Confirmed',
-  'Completed',
-  'Cancelled'
-];
+const VIEWING_RELATIONAL_SELECT =
+  '*, property:properties(id, title, location, price, transaction, price_period, slug, property_images(public_url, sort_order)), assigned_agent:profiles!viewing_requests_assigned_agent_id_fkey(id, name)';
 
-class ViewingService implements IViewingService {
-  public async getViewingRequests(_userId?: string): Promise<ViewingRequest[]> {
-    return mockStorage.getViewingRequests();
+function mapViewingError(err: unknown, fallbackMessage: string): ServiceError {
+  if (err instanceof ServiceError) return err;
+
+  const rawMsg =
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message?: unknown }).message || '')
+      : err instanceof Error
+      ? err.message
+      : '';
+  const lower = rawMsg.toLowerCase();
+
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('network request failed') ||
+    lower.includes('load failed')
+  ) {
+    return new ServiceError(
+      'Reality Estates could not connect to the server. Please check your internet connection and try again.',
+      'NETWORK_ERROR',
+      503
+    );
   }
 
-  public async createViewingRequest(input: CreateViewingRequestInput): Promise<ViewingRequest> {
-    const propertyId = (input.propertyId || '').trim();
-    const customerName = (input.customerName || '').trim();
-    const customerPhone = (input.customerPhone || '').trim();
-    const preferredDate = (input.preferredDate || '').trim();
-    const preferredTime = (input.preferredTime || '').trim();
+  if (lower.includes('row-level security') || lower.includes('permission denied')) {
+    return new ServiceError(
+      'You do not have permission to perform this action.',
+      'FORBIDDEN',
+      403
+    );
+  }
 
-    if (!propertyId) {
-      throw new ServiceError('Property ID is required to schedule a viewing.', 'VALIDATION_ERROR', 400);
+  return new ServiceError(fallbackMessage, 'UNKNOWN_ERROR', 500);
+}
+
+function mapRowToViewingRequest(
+  row: Record<string, unknown>,
+  fallbackProperty?: {
+    title?: string;
+    location?: string;
+    image?: string;
+    price?: number;
+    transaction?: TransactionType;
+    pricePeriod?: string;
+  }
+): ViewingRequest {
+  const prop =
+    row.property && typeof row.property === 'object' && !Array.isArray(row.property)
+      ? (row.property as Record<string, unknown>)
+      : null;
+
+  const rawImages = Array.isArray(prop?.property_images)
+    ? (prop?.property_images as Array<{ public_url?: string; sort_order?: number }>)
+    : [];
+  const sortedImages = [...rawImages].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
+  const primaryImage = sortedImages[0]?.public_url || fallbackProperty?.image || '';
+
+  const assignedAgentObj =
+    row.assigned_agent &&
+    typeof row.assigned_agent === 'object' &&
+    !Array.isArray(row.assigned_agent)
+      ? (row.assigned_agent as Record<string, unknown>)
+      : null;
+
+  return {
+    id: String(row.id || ''),
+    propertyId: String(row.property_id || ''),
+    propertyTitle: String(prop?.title || fallbackProperty?.title || 'Property Listing'),
+    propertyLocation: String(prop?.location || fallbackProperty?.location || ''),
+    propertyImage: primaryImage,
+    propertyPrice: Number(prop?.price ?? fallbackProperty?.price ?? 0),
+    propertyTransaction: ((prop?.transaction as TransactionType) ||
+      fallbackProperty?.transaction ||
+      'buy') as TransactionType,
+    propertyPricePeriod: prop?.price_period
+      ? String(prop.price_period)
+      : fallbackProperty?.pricePeriod,
+    customerName: String(row.customer_name || ''),
+    customerPhone: String(row.customer_phone || ''),
+    customerEmail: row.customer_email ? String(row.customer_email) : undefined,
+    preferredDate: String(row.preferred_date || ''),
+    preferredTime: String(row.preferred_time || ''),
+    message: row.message ? String(row.message) : undefined,
+    status: ((row.status as ViewingStatus) || 'Pending') as ViewingStatus,
+    dateRequested: String(row.created_at || new Date().toISOString()).split('T')[0],
+    assignedAgentName: assignedAgentObj?.name
+      ? String(assignedAgentObj.name)
+      : undefined
+  };
+}
+
+class ViewingService implements IViewingService {
+  public async getViewingRequests(userId?: string): Promise<ViewingRequest[]> {
+    const client = getRequiredSupabaseClient();
+    const { data: sessionData } = await client.auth.getSession();
+    const activeUserId = userId || sessionData.session?.user?.id;
+
+    if (!activeUserId) {
+      return [];
     }
-    if (!customerName) {
-      throw new ServiceError('Please provide your full name.', 'VALIDATION_ERROR', 400, {
+
+    try {
+      const { data, error } = await client
+        .from('viewing_requests')
+        .select(VIEWING_RELATIONAL_SELECT)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw mapViewingError(
+          error,
+          'Unable to load viewing requests. Please refresh the page.'
+        );
+      }
+
+      return ((data || []) as Record<string, unknown>[]).map((row) =>
+        mapRowToViewingRequest(row)
+      );
+    } catch (err) {
+      throw mapViewingError(
+        err,
+        'Unable to load viewing requests. Please refresh the page.'
+      );
+    }
+  }
+
+  public async createViewingRequest(
+    input: CreateViewingRequestInput
+  ): Promise<ViewingRequest> {
+    if (!input.propertyId) {
+      throw new ServiceError('Property reference is required.', 'VALIDATION_ERROR', 400);
+    }
+    if (!input.customerName || !input.customerName.trim()) {
+      throw new ServiceError('Your full name is required.', 'VALIDATION_ERROR', 400, {
         customerName: 'Name is required'
       });
     }
-    if (!customerPhone || customerPhone.replace(/\D/g, '').length < 7) {
-      throw new ServiceError('Please provide a valid phone number.', 'VALIDATION_ERROR', 400, {
-        customerPhone: 'Valid phone number is required'
+    if (!input.customerPhone || !input.customerPhone.trim()) {
+      throw new ServiceError('Your phone number is required.', 'VALIDATION_ERROR', 400, {
+        customerPhone: 'Phone number is required'
       });
     }
-    if (!isValidIsoDateString(preferredDate)) {
+    if (!input.preferredDate) {
       throw new ServiceError(
-        'Please select a valid calendar date (YYYY-MM-DD) for your viewing.',
+        'Please select a preferred viewing date.',
         'VALIDATION_ERROR',
         400,
-        { preferredDate: 'Invalid date value' }
+        { preferredDate: 'Preferred date is required' }
       );
     }
-    if (!preferredTime) {
-      throw new ServiceError('Please select a preferred time window.', 'VALIDATION_ERROR', 400, {
-        preferredTime: 'Time window is required'
-      });
+    if (!input.preferredTime) {
+      throw new ServiceError(
+        'Please select a preferred time slot.',
+        'VALIDATION_ERROR',
+        400,
+        { preferredTime: 'Preferred time is required' }
+      );
     }
 
-    const newRequest: ViewingRequest = {
-      id: `view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      propertyId,
-      propertyTitle: (input.propertyTitle || 'Property Listing').trim(),
-      propertyLocation: (input.propertyLocation || 'Uganda').trim(),
-      propertyImage: input.propertyImage || '',
-      propertyPrice: Number(input.propertyPrice) || 0,
-      propertyTransaction: input.propertyTransaction || 'buy',
-      propertyPricePeriod: input.propertyPricePeriod,
-      customerName,
-      customerPhone,
-      customerEmail: input.customerEmail?.trim() || undefined,
-      preferredDate,
-      preferredTime,
-      message: input.message?.trim() || 'Requesting on-site property inspection with representative.',
-      status: 'Pending',
-      dateRequested: new Date().toISOString().split('T')[0],
-      assignedAgentName: 'Pearl Prime Verification Desk'
-    };
+    const client = getRequiredSupabaseClient();
+    const { data: sessionData } = await client.auth.getSession();
+    const authenticatedUserId = sessionData.session?.user?.id;
 
-    const existing = mockStorage.getViewingRequests();
-    const updated = [newRequest, ...existing];
-    mockStorage.setViewingRequests(updated);
+    if (!authenticatedUserId) {
+      throw new ServiceError(
+        'Create an account or sign in to continue.',
+        'UNAUTHORIZED',
+        401
+      );
+    }
 
-    return newRequest;
+    try {
+      const { data: propData } = await client
+        .from('properties')
+        .select('advertiser_id')
+        .eq('id', input.propertyId)
+        .maybeSingle();
+
+      const assignedAgentId =
+        propData && typeof propData === 'object' && 'advertiser_id' in propData
+          ? (propData as { advertiser_id?: string | null }).advertiser_id || null
+          : null;
+
+      const viewingId = generateUuid();
+      const insertPayload: Record<string, unknown> = {
+        id: viewingId,
+        property_id: input.propertyId,
+        customer_id: authenticatedUserId,
+        assigned_agent_id: assignedAgentId,
+        customer_name: input.customerName.trim(),
+        customer_phone: input.customerPhone.trim(),
+        customer_email: input.customerEmail?.trim() || null,
+        preferred_date: input.preferredDate,
+        preferred_time: input.preferredTime,
+        message: input.message?.trim() || null,
+        status: 'Pending'
+      };
+
+      const { data, error } = await client
+        .from('viewing_requests')
+        .insert(insertPayload)
+        .select(VIEWING_RELATIONAL_SELECT)
+        .single();
+
+      if (error || !data) {
+        throw mapViewingError(
+          error,
+          'Unable to submit your viewing request. Please try again.'
+        );
+      }
+
+      return mapRowToViewingRequest(data as Record<string, unknown>, {
+        title: input.propertyTitle,
+        location: input.propertyLocation,
+        image: input.propertyImage,
+        price: input.propertyPrice,
+        transaction: input.propertyTransaction,
+        pricePeriod: input.propertyPricePeriod
+      });
+    } catch (err) {
+      throw mapViewingError(
+        err,
+        'Unable to submit your viewing request. Please try again.'
+      );
+    }
   }
 
   public async updateViewingRequestStatus(
     input: UpdateViewingStatusInput
   ): Promise<ViewingRequest> {
-    if (!VALID_VIEWING_STATUSES.includes(input.status)) {
-      throw new ServiceError(`Invalid viewing status: ${input.status}`, 'VALIDATION_ERROR', 400);
+    const client = getRequiredSupabaseClient();
+
+    try {
+      const { data, error } = await client
+        .from('viewing_requests')
+        .update({ status: input.status })
+        .eq('id', input.requestId)
+        .select(VIEWING_RELATIONAL_SELECT)
+        .single();
+
+      if (error || !data) {
+        throw mapViewingError(
+          error,
+          'Unable to update viewing status. Please try again.'
+        );
+      }
+
+      return mapRowToViewingRequest(data as Record<string, unknown>);
+    } catch (err) {
+      throw mapViewingError(
+        err,
+        'Unable to update viewing status. Please try again.'
+      );
     }
-
-    const existing = mockStorage.getViewingRequests();
-    const index = existing.findIndex(v => v.id === input.requestId);
-    if (index === -1) {
-      throw new ServiceError(`Viewing request "${input.requestId}" not found.`, 'NOT_FOUND', 404);
-    }
-
-    const updatedRequest: ViewingRequest = {
-      ...existing[index],
-      status: input.status,
-      assignedAgentName: input.assignedAgentName ?? existing[index].assignedAgentName
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedRequest;
-    mockStorage.setViewingRequests(nextList);
-
-    return updatedRequest;
   }
 }
 
-export const viewingService: IViewingService = new ViewingService();
+export const viewingService = new ViewingService();

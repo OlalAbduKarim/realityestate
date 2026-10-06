@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { Property } from '../types/property';
+import { propertyService } from '../services/propertyService';
 import { PropertyGallery } from '../components/PropertyGallery';
 import { PropertyCard } from '../components/PropertyCard';
 import { ViewingRequestModal } from '../components/ViewingRequestModal';
@@ -26,7 +28,8 @@ import {
   Scale,
   Check,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 
 interface PropertyDetailViewProps {
@@ -38,6 +41,7 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
     currentUser,
     openAuthModal,
     properties,
+    isDataLoading,
     getPropertyBySlug,
     navigateTo,
     isPropertySaved,
@@ -47,10 +51,57 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
 
   const [isViewingModalOpen, setIsViewingModalOpen] = useState(false);
   const [isContactAgentModalOpen, setIsContactAgentModalOpen] = useState(false);
-  const [contactAgentDefaultTab, setContactAgentDefaultTab] = useState<'call' | 'whatsapp' | 'message'>('call');
+  const [contactAgentDefaultTab, setContactAgentDefaultTab] = useState<
+    'call' | 'whatsapp' | 'message'
+  >('call');
   const [copied, setCopied] = useState(false);
+  const [fetchedProperty, setFetchedProperty] = useState<Property | null>(null);
+  const [isFetchingBySlug, setIsFetchingBySlug] = useState(false);
 
-  const property = slug ? getPropertyBySlug(slug) : properties[0];
+  const contextProperty = slug ? getPropertyBySlug(slug) : properties[0];
+  const property = contextProperty || fetchedProperty;
+
+  useEffect(() => {
+    if (!slug || contextProperty) {
+      setFetchedProperty(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsFetchingBySlug(true);
+    propertyService
+      .getPropertyBySlug(slug)
+      .then((loaded) => {
+        if (isMounted) {
+          setFetchedProperty(loaded);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setFetchedProperty(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsFetchingBySlug(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [slug, contextProperty]);
+
+  if (isDataLoading || isFetchingBySlug) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-4 bg-stone-50 dark:bg-stone-950 transition-colors duration-200">
+        <Loader2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400 animate-spin mb-3" />
+        <p className="text-sm font-medium text-stone-600 dark:text-stone-400">
+          Loading property...
+        </p>
+      </div>
+    );
+  }
 
   if (!property) {
     return (
@@ -93,7 +144,9 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
 
   const handleScheduleViewingClick = () => {
     if (!currentUser) {
-      openAuthModal('Please sign in or create an account to schedule a property viewing.');
+      openAuthModal('Create an account or sign in to continue.', () => {
+        setIsViewingModalOpen(true);
+      });
       return;
     }
     setIsViewingModalOpen(true);
@@ -101,9 +154,10 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
 
   const openContactAgent = (tab: 'call' | 'whatsapp' | 'message') => {
     if (!currentUser) {
-      openAuthModal(
-        'Please sign in or create an account to contact the property representative or submit an enquiry.'
-      );
+      openAuthModal('Create an account or sign in to continue.', () => {
+        setContactAgentDefaultTab(tab);
+        setIsContactAgentModalOpen(true);
+      });
       return;
     }
     setContactAgentDefaultTab(tab);

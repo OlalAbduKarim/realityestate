@@ -32,8 +32,7 @@ export class ApiClient {
   }
 
   /**
-   * Returns true if a remote backend base URL is configured.
-   * When false, services use the local development/demo mock adapter.
+   * Returns true if a custom REST API base URL is configured.
    */
   public isConfigured(): boolean {
     return this.baseUrl.length > 0;

@@ -9,47 +9,102 @@ import {
   ServiceError
 } from '../types/api';
 import { User, UserRole } from '../types/property';
+import { apiClient } from '../lib/apiClient';
 import {
   getRequiredSupabaseClient,
-  isSupabaseConfigured,
-  supabase
+  isSupabaseConfigured
 } from '../lib/supabase';
-import { mockStorage } from '../mocks/mockStorage';
 
-const VALID_ROLES: UserRole[] = ['buyer', 'agent', 'owner', 'developer', 'admin'];
-const PUBLIC_ROLES: PublicRegistrableRole[] = ['buyer', 'agent', 'owner', 'developer'];
+const ALLOWED_PUBLIC_ROLES: ReadonlyArray<PublicRegistrableRole> = [
+  'buyer',
+  'owner',
+  'agent',
+  'developer'
+];
+
+const ALL_VALID_ROLES: ReadonlyArray<UserRole> = [
+  'buyer',
+  'owner',
+  'agent',
+  'developer',
+  'admin'
+];
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Normalizes a role value from the authoritative PostgreSQL `profiles` table.
+ * Normalizes a Ugandan phone number (`07...`, `2567...`, `+2567...`) into `+256 7XX XXX XXX`
+ * and validates its length.
  */
-function normalizeDbProfileRole(rawRole?: string | null): UserRole {
-  const normalized = (rawRole || '').trim().toLowerCase() as UserRole;
-  return VALID_ROLES.includes(normalized) ? normalized : 'buyer';
+export function normalizeUgandaPhone(rawPhone: string): string {
+  const digits = rawPhone.replace(/\D/g, '');
+  if (digits.startsWith('256') && digits.length === 12) {
+    const local = digits.slice(3);
+    return `+256 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+  }
+  if (digits.startsWith('0') && digits.length === 10) {
+    const local = digits.slice(1);
+    return `+256 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+  }
+  if (digits.length === 9 && digits.startsWith('7')) {
+    return `+256 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  }
+  return rawPhone.trim();
+}
+
+export function isValidUgandaPhone(rawPhone: string): boolean {
+  const digits = rawPhone.replace(/\D/g, '');
+  if (digits.startsWith('256') && digits.length === 12) return true;
+  if (digits.startsWith('0') && digits.length === 10) return true;
+  if (digits.startsWith('7') && digits.length === 9) return true;
+  return digits.length >= 9 && digits.length <= 15;
 }
 
 /**
- * Normalizes a public self-selected role. Never allows 'admin' from user metadata or signup inputs.
+ * Enforces that a self-selected registration role can NEVER be 'admin'.
  */
-function normalizePublicRole(rawRole?: string | null): PublicRegistrableRole {
-  const normalized = (rawRole || '').trim().toLowerCase() as PublicRegistrableRole;
-  return PUBLIC_ROLES.includes(normalized) ? normalized : 'buyer';
+function sanitizePublicRole(role?: string | null): PublicRegistrableRole {
+  const normalized = (role || 'buyer').toLowerCase().trim();
+  if (normalized === 'admin') {
+    throw new ServiceError(
+      'Public registration cannot create an Admin account. Please choose Buyer, Owner, Agent, or Developer.',
+      'FORBIDDEN',
+      403,
+      { role: 'Admin accounts cannot be self-registered.' }
+    );
+  }
+  if ((ALLOWED_PUBLIC_ROLES as ReadonlyArray<string>).includes(normalized)) {
+    return normalized as PublicRegistrableRole;
+  }
+  return 'buyer';
 }
 
 /**
- * Maps raw Supabase Auth errors into consistent, user-friendly ServiceError instances
- * without leaking internal database or server details.
+ * Resolves a role from the database `profiles` row (`role` column).
+ * Note: Client-side role values are used strictly for UI rendering decisions;
+ * actual authorization is enforced by PostgreSQL Row-Level Security (RLS).
  */
-export function mapSupabaseAuthError(
-  err: unknown,
-  fallbackMessage = 'Authentication request failed. Please try again.'
-): ServiceError {
+function parseDatabaseRole(rawRole?: string | null): UserRole {
+  const normalized = (rawRole || 'buyer').toLowerCase().trim();
+  if ((ALL_VALID_ROLES as ReadonlyArray<string>).includes(normalized)) {
+    return normalized as UserRole;
+  }
+  return 'buyer';
+}
+
+/**
+ * Maps raw Supabase Auth / network errors into consistent, user-friendly `ServiceError` instances
+ * without exposing internal PostgreSQL or stack trace details.
+ */
+function mapSupabaseAuthError(err: unknown, fallbackMessage: string): ServiceError {
   if (err instanceof ServiceError) {
     return err;
   }
 
   const rawMessage =
-    err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message?: unknown }).message || '')
+      : err instanceof Error
       ? err.message
       : '';
   const lower = rawMessage.toLowerCase();
@@ -61,7 +116,7 @@ export function mapSupabaseAuthError(
     lower.includes('load failed')
   ) {
     return new ServiceError(
-      'Network connection failed. Please check your internet connection and try again.',
+      'Reality Estates could not connect to the server. Please check your internet connection and try again.',
       'NETWORK_ERROR',
       503
     );
@@ -74,7 +129,7 @@ export function mapSupabaseAuthError(
     lower.includes('user not found')
   ) {
     return new ServiceError(
-      'Invalid email or password. Please check your credentials and try again.',
+      'Invalid email address or password. Please check your credentials and try again.',
       'UNAUTHORIZED',
       401
     );
@@ -82,750 +137,632 @@ export function mapSupabaseAuthError(
 
   if (
     lower.includes('email not confirmed') ||
-    lower.includes('confirm your email') ||
-    lower.includes('unverified email')
+    lower.includes('confirm your email')
   ) {
     return new ServiceError(
-      'Please verify your email address before signing in. Check your inbox for the confirmation link.',
-      'FORBIDDEN',
+      'Your email address has not been confirmed yet. Please check your inbox for the verification link before signing in.',
+      'EMAIL_NOT_CONFIRMED',
       403
     );
   }
 
   if (
     lower.includes('user already registered') ||
-    lower.includes('already registered') ||
     lower.includes('already been registered') ||
-    lower.includes('emailExists'.toLowerCase())
+    lower.includes('already exists') ||
+    lower.includes('duplicate key')
   ) {
     return new ServiceError(
       'An account with this email address is already registered. Please sign in instead.',
       'CONFLICT',
-      409
+      409,
+      { email: 'Email is already registered.' }
     );
   }
 
   if (
-    lower.includes('password should be') ||
+    lower.includes('password should be at least') ||
     lower.includes('weak_password') ||
     lower.includes('password is too weak') ||
-    lower.includes('password must be at least')
+    lower.includes('characters')
   ) {
     return new ServiceError(
-      'Password is too weak. Please use at least 6 characters with a combination of letters and numbers.',
-      'VALIDATION_ERROR',
-      400
+      'Password is too weak. Please use at least 6 characters with a mix of letters and numbers.',
+      'WEAK_PASSWORD',
+      400,
+      { password: 'Password must be at least 6 characters.' }
     );
   }
 
   if (
-    lower.includes('unable to validate email address') ||
     lower.includes('invalid email') ||
-    lower.includes('email address is invalid')
+    lower.includes('unable to validate email')
   ) {
     return new ServiceError(
       'Please enter a valid email address.',
       'VALIDATION_ERROR',
-      400
+      400,
+      { email: 'Invalid email format.' }
     );
   }
 
   if (
     lower.includes('jwt expired') ||
-    lower.includes('refresh_token_not_found') ||
     lower.includes('session_not_found') ||
-    lower.includes('session expired') ||
+    lower.includes('refresh_token_not_found') ||
     lower.includes('invalid refresh token')
   ) {
     return new ServiceError(
       'Your session has expired. Please sign in again to continue.',
-      'UNAUTHORIZED',
+      'SESSION_EXPIRED',
       401
     );
   }
 
-  return new ServiceError(fallbackMessage, 'UNKNOWN_ERROR', 400);
+  if (lower.includes('rate limit') || lower.includes('too many requests')) {
+    return new ServiceError(
+      'Too many authentication attempts. Please wait a moment before trying again.',
+      'VALIDATION_ERROR',
+      429
+    );
+  }
+
+  return new ServiceError(fallbackMessage, 'UNKNOWN_ERROR', 500);
 }
 
 /**
- * Maps a Supabase Auth user + PostgreSQL `profiles` row into the domain `User` model.
- *
- * Security Rules:
- * - `profiles.role` from PostgreSQL (enforced by RLS) is the primary source of role.
- * - `user_metadata` is NEVER trusted to grant `admin` role.
+ * Maps a Supabase Auth User + optional `public.profiles` row into the frontend `User` model.
  */
-function mapSupabaseUserAndProfileToDomainUser(
+function mapProfileAndAuthToUser(
   authUser: SupabaseAuthUser,
-  profileRow?: ProfileRow | null
+  profile?: ProfileRow | null
 ): User {
-  const meta = (authUser.user_metadata || {}) as Record<string, unknown>;
-  const appMeta = (authUser.app_metadata || {}) as Record<string, unknown>;
+  const metadata = (authUser.user_metadata || {}) as Record<string, unknown>;
 
-  let resolvedRole: UserRole = 'buyer';
-  if (profileRow?.role) {
-    resolvedRole = normalizeDbProfileRole(profileRow.role);
-  } else if (appMeta.role === 'admin') {
-    resolvedRole = 'admin';
-  } else if (typeof meta.role === 'string') {
-    resolvedRole = normalizePublicRole(meta.role);
-  }
+  const resolvedName =
+    profile?.name ||
+    profile?.full_name ||
+    (typeof metadata.name === 'string' ? metadata.name : '') ||
+    (typeof metadata.full_name === 'string' ? metadata.full_name : '') ||
+    (authUser.email ? authUser.email.split('@')[0] : 'Reality Estates User');
 
-  const resolvedName = (
-    profileRow?.full_name ||
-    profileRow?.name ||
-    (typeof meta.full_name === 'string' ? meta.full_name : '') ||
-    (typeof meta.name === 'string' ? meta.name : '') ||
-    (authUser.email ? authUser.email.split('@')[0].replace(/[._-]/g, ' ') : 'Reality Estates Member')
-  ).trim();
+  const resolvedEmail = profile?.email || authUser.email || '';
 
-  const resolvedEmail = (
-    profileRow?.email ||
-    authUser.email ||
-    (typeof meta.email === 'string' ? meta.email : '')
-  ).trim();
-
-  const resolvedPhone = (
-    profileRow?.phone ||
-    profileRow?.phone_number ||
+  const resolvedPhone =
+    profile?.phone ||
+    profile?.phone_number ||
+    (typeof metadata.phone === 'string' ? metadata.phone : '') ||
     authUser.phone ||
-    (typeof meta.phone === 'string' ? meta.phone : '')
-  ).trim();
+    '';
 
-  const resolvedCompany = (
-    profileRow?.company ||
-    profileRow?.agency_name ||
-    (typeof meta.company === 'string' ? meta.company : '')
-  ).trim();
+  // Authoritative role comes from `public.profiles.role` when available.
+  // If `profiles` row has not yet been read, fall back to sanitized non-admin metadata role.
+  const resolvedRole: UserRole = profile?.role
+    ? parseDatabaseRole(profile.role)
+    : sanitizePublicRole(
+        typeof metadata.role === 'string' ? metadata.role : 'buyer'
+      );
 
-  const resolvedAvatar = (
-    profileRow?.avatar_url ||
-    profileRow?.avatar ||
-    (typeof meta.avatar_url === 'string' ? meta.avatar_url : '')
-  ).trim();
+  const resolvedCompany =
+    profile?.company ||
+    profile?.agency_name ||
+    (typeof metadata.company === 'string' ? metadata.company : undefined);
 
-  const verifiedIdentity = Boolean(
-    profileRow?.verified_identity ??
-      profileRow?.is_verified ??
-      authUser.email_confirmed_at ??
-      authUser.phone_confirmed_at
+  const resolvedAvatar =
+    profile?.avatar_url ||
+    profile?.avatar ||
+    (typeof metadata.avatar_url === 'string' ? metadata.avatar_url : undefined);
+
+  const resolvedVerified = Boolean(
+    profile?.verified_identity ??
+      profile?.is_verified ??
+      Boolean(authUser.email_confirmed_at)
   );
 
   return {
     id: authUser.id,
-    name: resolvedName || 'Reality Estates Member',
-    email: resolvedEmail,
-    phone: resolvedPhone,
+    name: resolvedName.trim(),
+    email: resolvedEmail.trim(),
+    phone: resolvedPhone.trim(),
     role: resolvedRole,
-    avatar: resolvedAvatar || undefined,
-    company: resolvedCompany || undefined,
-    verifiedIdentity
-  };
-}
-
-/**
- * Validates an in-memory Demo Mode persona (used ONLY when Supabase env vars are missing).
- */
-function validateDemoPersona(candidate: User | null): User | null {
-  if (!candidate || typeof candidate !== 'object') return null;
-  if (!candidate.id || !candidate.name) return null;
-
-  const demoUsers = mockStorage.getDemoUsers();
-  const matchedAdmin = demoUsers.find(
-    (u) => u.role === 'admin' && u.id === candidate.id && u.email === candidate.email
-  );
-
-  let safeRole: UserRole = VALID_ROLES.includes(candidate.role)
-    ? candidate.role
-    : 'buyer';
-  if (safeRole === 'admin' && !matchedAdmin) {
-    safeRole = 'buyer';
-  }
-
-  return {
-    id: String(candidate.id),
-    name: String(candidate.name).trim(),
-    email: String(candidate.email || '').trim(),
-    phone: String(candidate.phone || '').trim(),
-    role: safeRole,
-    avatar: candidate.avatar,
-    company: candidate.company,
-    verifiedIdentity: Boolean(candidate.verifiedIdentity)
+    company: resolvedCompany,
+    avatar: resolvedAvatar,
+    verifiedIdentity: resolvedVerified
   };
 }
 
 class AuthService implements IAuthService {
-  // Strictly in-memory session state for offline Demo Mode (when Supabase is not configured).
-  // Never persisted to localStorage.
-  private inMemoryDemoUser: User | null = null;
-  private demoListeners = new Set<(event: string, user: User | null) => void>();
+  constructor() {
+    apiClient.setAuthTokenProvider(async () => {
+      if (!isSupabaseConfigured()) return null;
+      try {
+        const client = getRequiredSupabaseClient();
+        const { data } = await client.auth.getSession();
+        return data.session?.access_token ?? null;
+      } catch {
+        return null;
+      }
+    });
+  }
 
   public isSupabaseAuthEnabled(): boolean {
     return isSupabaseConfigured();
   }
 
-  private notifyDemoListeners(event: string, user: User | null): void {
-    this.demoListeners.forEach((listener) => {
-      try {
-        listener(event, user);
-      } catch {
-        // Ignore listener errors
-      }
-    });
-  }
-
   /**
-   * Fetches the row from `public.profiles` matching `auth.users.id`.
+   * Queries `public.profiles` for `id = authUser.id`.
+   * If the database trigger (`on_auth_user_created`) already created the row,
+   * updates any missing fields (`name`, `phone`, `role`, `company`) without creating duplicates.
+   * If no row exists yet, inserts the profile row linked to `auth.users.id`.
    */
-  private async fetchProfileRowByUserId(userId: string): Promise<ProfileRow | null> {
-    if (!supabase || !userId) return null;
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error || !data) {
-        return null;
-      }
-      return data as ProfileRow;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Ensures a single profile row exists in `public.profiles` for `auth.users.id`
-   * after registration or login, respecting any existing database trigger (`handle_new_user`)
-   * and never creating duplicate profile rows.
-   */
-  private async ensureProfileSynchronized(
+  private async syncProfileForAuthUser(
     authUser: SupabaseAuthUser,
-    registrationDetails?: {
-      name: string;
-      email: string;
-      phone: string;
-      role: PublicRegistrableRole;
+    overrides?: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      role?: PublicRegistrableRole;
       company?: string;
     }
-  ): Promise<ProfileRow | null> {
-    if (!supabase) return null;
+  ): Promise<User> {
+    const client = getRequiredSupabaseClient();
+    const metadata = (authUser.user_metadata || {}) as Record<string, unknown>;
 
-    // 1. Check if the database trigger (`on_auth_user_created`) already created the profile row
-    const existingRow = await this.fetchProfileRowByUserId(authUser.id);
+    const desiredName = (
+      overrides?.name ||
+      (typeof metadata.name === 'string' ? metadata.name : '') ||
+      (typeof metadata.full_name === 'string' ? metadata.full_name : '') ||
+      (authUser.email ? authUser.email.split('@')[0] : 'User')
+    ).trim();
 
-    if (existingRow) {
-      // If registration provided phone/name/role that the trigger didn't populate yet, update that existing row
-      if (registrationDetails) {
-        const currentName = existingRow.full_name || existingRow.name;
-        const currentPhone = existingRow.phone || existingRow.phone_number;
-        const needsUpdate =
-          !currentName ||
-          !currentPhone ||
-          (existingRow.role !== 'admin' && existingRow.role !== registrationDetails.role);
+    const desiredEmail = (overrides?.email || authUser.email || '').trim();
+    const desiredPhone = normalizeUgandaPhone(
+      overrides?.phone ||
+        (typeof metadata.phone === 'string' ? metadata.phone : '') ||
+        authUser.phone ||
+        ''
+    );
+    const desiredRole = sanitizePublicRole(
+      overrides?.role ||
+        (typeof metadata.role === 'string' ? metadata.role : 'buyer')
+    );
+    const desiredCompany =
+      overrides?.company ||
+      (typeof metadata.company === 'string' ? metadata.company : undefined);
 
-        if (needsUpdate) {
-          const updateCandidates: Record<string, unknown>[] = [
-            {
-              full_name: registrationDetails.name,
-              phone: registrationDetails.phone,
-              role: registrationDetails.role
-            },
-            {
-              name: registrationDetails.name,
-              phone: registrationDetails.phone,
-              role: registrationDetails.role
-            }
-          ];
+    try {
+      const { data: existingProfile, error: selectError } = await client
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
 
-          for (const patch of updateCandidates) {
-            const { data: updatedData, error: updateErr } = await supabase
+      if (!selectError && existingProfile) {
+        const currentRow = existingProfile as ProfileRow;
+        const currentName = currentRow.name || '';
+        const currentPhone = currentRow.phone || '';
+        const currentEmail = currentRow.email || '';
+
+        const needsMetadataBackfill =
+          (Boolean(overrides?.name) && currentName !== desiredName) ||
+          (Boolean(overrides?.phone) && currentPhone !== desiredPhone) ||
+          (!currentPhone && Boolean(desiredPhone)) ||
+          (!currentEmail && Boolean(desiredEmail));
+
+        if (needsMetadataBackfill) {
+          const updatePayload: Record<string, unknown> = {};
+          if (desiredName && (!currentName || overrides?.name)) {
+            updatePayload.name = desiredName;
+          }
+          if (desiredPhone && (!currentPhone || overrides?.phone)) {
+            updatePayload.phone = desiredPhone;
+          }
+          if (desiredEmail && !currentEmail) {
+            updatePayload.email = desiredEmail;
+          }
+          if (desiredCompany && !currentRow.company) {
+            updatePayload.company = desiredCompany;
+          }
+          if (
+            overrides?.role &&
+            currentRow.role !== 'admin' &&
+            currentRow.role !== desiredRole
+          ) {
+            updatePayload.role = desiredRole;
+          }
+
+          if (Object.keys(updatePayload).length > 0) {
+            const { data: updatedRow, error: updateErr } = await client
               .from('profiles')
-              .update(patch)
+              .update(updatePayload)
               .eq('id', authUser.id)
               .select('*')
               .maybeSingle();
 
-            if (!updateErr && updatedData) {
-              return updatedData as ProfileRow;
+            if (!updateErr && updatedRow) {
+              return mapProfileAndAuthToUser(authUser, updatedRow as ProfileRow);
             }
           }
         }
+
+        return mapProfileAndAuthToUser(authUser, currentRow);
       }
-      return existingRow;
-    }
 
-    // 2. If no database trigger created the row yet, perform a single idempotent upsert by `id` (`auth.users.id`)
-    const meta = (authUser.user_metadata || {}) as Record<string, unknown>;
-    const fullName =
-      registrationDetails?.name ||
-      (typeof meta.full_name === 'string' ? meta.full_name : '') ||
-      (typeof meta.name === 'string' ? meta.name : '') ||
-      (authUser.email ? authUser.email.split('@')[0] : 'Reality Estates Member');
-    const email = registrationDetails?.email || authUser.email || '';
-    const phone =
-      registrationDetails?.phone ||
-      authUser.phone ||
-      (typeof meta.phone === 'string' ? meta.phone : '');
-    const safeRole: PublicRegistrableRole =
-      registrationDetails?.role ||
-      normalizePublicRole(typeof meta.role === 'string' ? meta.role : 'buyer');
-
-    const candidatePayloads: Record<string, unknown>[] = [
-      {
+      // If no profile row exists yet (e.g. trigger did not run), insert one linked to auth.users.id
+      const insertPayload: Record<string, unknown> = {
         id: authUser.id,
-        email,
-        full_name: fullName,
-        phone,
-        role: safeRole
-      },
-      {
-        id: authUser.id,
-        email,
-        name: fullName,
-        phone,
-        role: safeRole
-      },
-      {
-        id: authUser.id,
-        full_name: fullName,
-        role: safeRole
+        name: desiredName,
+        email: desiredEmail,
+        phone: desiredPhone,
+        role: desiredRole
+      };
+      if (desiredCompany) {
+        insertPayload.company = desiredCompany;
       }
-    ];
 
-    for (const payload of candidatePayloads) {
-      const { data, error } = await supabase
+      const { data: insertedProfile, error: insertError } = await client
         .from('profiles')
-        .upsert(payload, { onConflict: 'id' })
+        .insert(insertPayload)
         .select('*')
         .maybeSingle();
 
-      if (!error && data) {
-        return data as ProfileRow;
+      if (!insertError && insertedProfile) {
+        return mapProfileAndAuthToUser(authUser, insertedProfile as ProfileRow);
       }
+    } catch {
+      // Fall back to authenticated user metadata if RLS temporarily blocks profile mutation
     }
 
-    return this.fetchProfileRowByUserId(authUser.id);
+    return mapProfileAndAuthToUser(authUser, null);
   }
 
   /**
-   * Returns the current active Supabase Auth session (or null if unauthenticated).
+   * Returns the current active Supabase Session (`null` when unauthenticated).
    */
   public async getCurrentSession(): Promise<Session | null> {
-    if (!isSupabaseConfigured() || !supabase) {
-      return null;
-    }
-
+    const client = getRequiredSupabaseClient();
     try {
-      const { data, error } = await supabase.auth.getSession();
+      const { data, error } = await client.auth.getSession();
       if (error) {
-        throw mapSupabaseAuthError(error);
+        throw mapSupabaseAuthError(
+          error,
+          'Unable to verify your current session.'
+        );
       }
-      return data.session;
-    } catch {
+      return data.session ?? null;
+    } catch (err) {
+      if (err instanceof ServiceError && err.code === 'SESSION_EXPIRED') {
+        await client.auth.signOut().catch(() => {});
+      }
       return null;
     }
   }
 
   /**
-   * Returns the authenticated user's profile combined from Supabase Auth and `public.profiles`.
-   */
-  public async getCurrentProfile(): Promise<User | null> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: sessionData, error: sessionError } =
-          await supabase.auth.getSession();
-        if (sessionError || !sessionData.session?.user) {
-          return null;
-        }
-
-        const authUser = sessionData.session.user;
-        const profileRow = await this.fetchProfileRowByUserId(authUser.id);
-        return mapSupabaseUserAndProfileToDomainUser(authUser, profileRow);
-      } catch {
-        return null;
-      }
-    }
-
-    return this.inMemoryDemoUser;
-  }
-
-  /**
-   * Returns the current authenticated user (delegating to `getCurrentProfile`).
+   * Returns the currently authenticated user mapped with their `profiles` record,
+   * or `null` if unauthenticated.
    */
   public async getCurrentUser(): Promise<User | null> {
     return this.getCurrentProfile();
   }
 
   /**
-   * Registers a new user account via Supabase Auth (`supabase.auth.signUp`)
-   * and associates their profile in `public.profiles` with `auth.users.id`.
+   * Fetches the authenticated user's profile from `public.profiles` linked to `auth.users.id`.
+   */
+  public async getCurrentProfile(): Promise<User | null> {
+    const client = getRequiredSupabaseClient();
+    try {
+      const { data: sessionData, error: sessionErr } =
+        await client.auth.getSession();
+      if (sessionErr || !sessionData.session?.user) {
+        return null;
+      }
+
+      const authUser = sessionData.session.user;
+      const { data: profileRow, error: profileErr } = await client
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
+      if (!profileErr && profileRow) {
+        return mapProfileAndAuthToUser(authUser, profileRow as ProfileRow);
+      }
+
+      return await this.syncProfileForAuthUser(authUser);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Registers a new account in Supabase Auth and associates the user's profile
+   * in `public.profiles` with `auth.users.id`.
+   *
+   * Security: Public registration strictly forbids `admin` role creation.
    */
   public async signUp(input: RegisterInput): Promise<AuthSessionResponse> {
-    const name = (input.name || '').trim();
-    const phone = (input.phone || '').trim();
-    const email = (input.email || '').trim().toLowerCase();
+    const client = getRequiredSupabaseClient();
+    const trimmedName = input.name.trim();
+    const trimmedEmail = input.email.trim().toLowerCase();
+    const trimmedPhone = input.phone.trim();
     const password = input.password || '';
 
-    // Never allow public registration to create an 'admin' account
-    const requestedRole = String(input.role || 'buyer')
-      .trim()
-      .toLowerCase();
-    if (requestedRole === 'admin') {
+    if (!trimmedName || trimmedName.length < 2) {
       throw new ServiceError(
-        'Administrator accounts cannot be created through public registration.',
-        'FORBIDDEN',
-        403
-      );
-    }
-
-    const safeRole: PublicRegistrableRole = normalizePublicRole(requestedRole);
-
-    if (!name) {
-      throw new ServiceError(
-        'Please enter your full name to create an account.',
+        'Please enter your full name (at least 2 characters).',
         'VALIDATION_ERROR',
         400,
-        { name: 'Full name is required' }
+        { name: 'Full name is required.' }
       );
     }
 
-    if (!email || !EMAIL_REGEX.test(email)) {
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
       throw new ServiceError(
         'Please enter a valid email address.',
         'VALIDATION_ERROR',
         400,
-        { email: 'Valid email address is required' }
+        { email: 'Valid email address is required.' }
       );
     }
 
-    if (!phone || phone.replace(/\D/g, '').length < 7) {
+    if (!trimmedPhone || !isValidUgandaPhone(trimmedPhone)) {
       throw new ServiceError(
-        'Please enter a valid Ugandan phone number.',
+        'Please enter a valid Ugandan phone number (e.g. 0772 123 456 or +256 772 123 456).',
         'VALIDATION_ERROR',
         400,
-        { phone: 'Valid phone number is required' }
+        { phone: 'Valid Ugandan phone number is required.' }
       );
     }
 
-    if (!password || password.length < 6) {
+    if (password.length < 6) {
       throw new ServiceError(
-        'Password is too weak. Please use at least 6 characters.',
-        'VALIDATION_ERROR',
+        'Please choose a password with at least 6 characters.',
+        'WEAK_PASSWORD',
         400,
-        { password: 'Minimum 6 characters required' }
+        { password: 'Password must be at least 6 characters.' }
       );
     }
 
-    // Production Supabase Auth registration
-    if (isSupabaseConfigured()) {
-      const client = getRequiredSupabaseClient();
-      try {
-        const { data, error } = await client.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: name,
-              name,
-              phone,
-              role: safeRole,
-              company: input.company?.trim() || null
-            }
+    const sanitizedRole = sanitizePublicRole(input.role);
+    const normalizedPhone = normalizeUgandaPhone(trimmedPhone);
+
+    try {
+      const { data, error } = await client.auth.signUp({
+        email: trimmedEmail,
+        password,
+        options: {
+          data: {
+            full_name: trimmedName,
+            name: trimmedName,
+            phone: normalizedPhone,
+            role: sanitizedRole,
+            company: input.company?.trim() || null
           }
-        });
-
-        if (error) {
-          throw mapSupabaseAuthError(error, 'Could not complete registration.');
         }
+      });
 
-        if (!data.user) {
-          throw new ServiceError(
-            'Registration could not be completed. Please try again.',
-            'UNKNOWN_ERROR',
-            500
-          );
-        }
+      if (error) {
+        throw mapSupabaseAuthError(
+          error,
+          'Unable to complete registration. Please check your details and try again.'
+        );
+      }
 
-        // Supabase returns an empty identities array when an email is already registered and obfuscation is active
-        if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          throw new ServiceError(
-            'An account with this email address is already registered. Please sign in instead.',
-            'CONFLICT',
-            409
-          );
-        }
+      if (!data.user) {
+        throw new ServiceError(
+          'Registration could not be completed. Please try again.',
+          'UNKNOWN_ERROR',
+          500
+        );
+      }
 
-        // If a session was immediately issued, ensure `profiles` row is synchronized
-        if (data.session) {
-          const profileRow = await this.ensureProfileSynchronized(data.user, {
-            name,
-            email,
-            phone,
-            role: safeRole,
-            company: input.company?.trim()
-          });
-          const domainUser = mapSupabaseUserAndProfileToDomainUser(
-            data.user,
-            profileRow
-          );
-          return {
-            user: domainUser,
-            isDemoSession: false,
-            requiresEmailConfirmation: false
-          };
-        }
+      // Supabase returns an empty identities array when an email is already registered
+      // and email enumeration protection is enabled.
+      if (
+        Array.isArray(data.user.identities) &&
+        data.user.identities.length === 0
+      ) {
+        throw new ServiceError(
+          'An account with this email address is already registered. Please sign in instead.',
+          'CONFLICT',
+          409,
+          { email: 'Email is already registered.' }
+        );
+      }
 
-        // Email confirmation is required before an active session is established
-        const pendingUser = mapSupabaseUserAndProfileToDomainUser(data.user, {
-          id: data.user.id,
-          email,
-          full_name: name,
-          phone,
-          role: safeRole
+      // If email confirmation is disabled in Supabase, `data.session` is immediately active
+      if (data.session) {
+        const syncedUser = await this.syncProfileForAuthUser(data.user, {
+          name: trimmedName,
+          phone: normalizedPhone,
+          email: trimmedEmail,
+          role: sanitizedRole,
+          company: input.company
         });
 
         return {
-          user: pendingUser,
-          isDemoSession: false,
-          requiresEmailConfirmation: true
+          user: syncedUser,
+          requiresEmailConfirmation: false
         };
-      } catch (err) {
-        throw mapSupabaseAuthError(err, 'Could not complete registration.');
       }
+
+      // Email confirmation is required before a session is issued
+      const pendingUser = mapProfileAndAuthToUser(data.user, {
+        id: data.user.id,
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: normalizedPhone,
+        role: sanitizedRole,
+        company: input.company
+      });
+
+      return {
+        user: pendingUser,
+        requiresEmailConfirmation: true
+      };
+    } catch (err) {
+      throw mapSupabaseAuthError(
+        err,
+        'Unable to create your account. Please try again.'
+      );
     }
-
-    // Isolated Demo Mode fallback (ONLY when VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY are not configured)
-    const demoUser: User = {
-      id: `demo-usr-${Date.now().toString(36)}`,
-      name,
-      phone,
-      email,
-      role: safeRole,
-      company: input.company?.trim() || undefined,
-      verifiedIdentity: true
-    };
-
-    this.inMemoryDemoUser = demoUser;
-    this.notifyDemoListeners('SIGNED_IN', demoUser);
-    return {
-      user: demoUser,
-      isDemoSession: true
-    };
   }
 
   /**
-   * Signs in an existing user via Supabase Auth (`supabase.auth.signInWithPassword`)
-   * and loads their profile from `public.profiles`.
+   * Signs in an existing user against Supabase Auth and resolves their `profiles` record.
    */
   public async signIn(input: LoginInput): Promise<AuthSessionResponse> {
-    const identifier = (input.identifier || '').trim();
+    const client = getRequiredSupabaseClient();
+    const rawIdentifier = input.identifier.trim();
     const password = input.password || '';
 
-    if (!identifier) {
+    if (!rawIdentifier) {
       throw new ServiceError(
-        'Please enter your email address.',
+        'Please enter your registered email address.',
         'VALIDATION_ERROR',
         400,
-        { identifier: 'Email address is required' }
+        { identifier: 'Email address is required.' }
       );
     }
 
-    // Production Supabase Auth sign-in
-    if (isSupabaseConfigured()) {
-      const client = getRequiredSupabaseClient();
-      const isEmail = identifier.includes('@');
-
-      if (isEmail && !EMAIL_REGEX.test(identifier)) {
-        throw new ServiceError(
-          'Please enter a valid email address.',
-          'VALIDATION_ERROR',
-          400,
-          { identifier: 'Invalid email format' }
-        );
-      }
-
-      if (!password) {
-        throw new ServiceError(
-          'Please enter your password to sign in.',
-          'VALIDATION_ERROR',
-          400,
-          { password: 'Password is required' }
-        );
-      }
-
-      try {
-        const credentials = isEmail
-          ? { email: identifier.toLowerCase(), password }
-          : { phone: identifier, password };
-
-        const { data, error } = await client.auth.signInWithPassword(credentials);
-        if (error) {
-          throw mapSupabaseAuthError(error, 'Unable to sign in.');
-        }
-
-        if (!data.user || !data.session) {
-          throw new ServiceError(
-            'Invalid email or password. Please check your credentials and try again.',
-            'UNAUTHORIZED',
-            401
-          );
-        }
-
-        const profileRow = await this.ensureProfileSynchronized(data.user);
-        const domainUser = mapSupabaseUserAndProfileToDomainUser(
-          data.user,
-          profileRow
-        );
-
-        return {
-          user: domainUser,
-          isDemoSession: false
-        };
-      } catch (err) {
-        throw mapSupabaseAuthError(err, 'Unable to sign in.');
-      }
+    if (!EMAIL_REGEX.test(rawIdentifier)) {
+      throw new ServiceError(
+        'Please sign in using your registered email address (e.g. name@domain.com).',
+        'VALIDATION_ERROR',
+        400,
+        { identifier: 'Valid email address is required for sign in.' }
+      );
     }
 
-    // Offline Demo Mode fallback (ONLY when Supabase env vars are not configured)
-    const demoUsers = mockStorage.getDemoUsers();
-    const normalizedDigits = identifier.replace(/\D/g, '');
+    if (!password) {
+      throw new ServiceError(
+        'Please enter your account password.',
+        'VALIDATION_ERROR',
+        400,
+        { password: 'Password is required.' }
+      );
+    }
 
-    const matchedDemo = demoUsers.find((u) => {
-      const emailMatch = u.email.toLowerCase() === identifier.toLowerCase();
-      const userDigits = u.phone.replace(/\D/g, '');
-      const phoneMatch =
-        normalizedDigits.length >= 6 &&
-        userDigits.endsWith(normalizedDigits.slice(-6));
-      return emailMatch || phoneMatch;
-    });
+    try {
+      const { data, error } = await client.auth.signInWithPassword({
+        email: rawIdentifier.toLowerCase(),
+        password
+      });
 
-    if (matchedDemo) {
-      this.inMemoryDemoUser = matchedDemo;
-      this.notifyDemoListeners('SIGNED_IN', matchedDemo);
+      if (error) {
+        throw mapSupabaseAuthError(
+          error,
+          'Invalid email address or password. Please try again.'
+        );
+      }
+
+      if (!data.user || !data.session) {
+        throw new ServiceError(
+          'Unable to establish an authenticated session. Please try again.',
+          'UNAUTHORIZED',
+          401
+        );
+      }
+
+      const profileUser = await this.syncProfileForAuthUser(data.user);
+
       return {
-        user: matchedDemo,
-        isDemoSession: true
+        user: profileUser,
+        requiresEmailConfirmation: false
       };
+    } catch (err) {
+      throw mapSupabaseAuthError(
+        err,
+        'Unable to sign in. Please verify your email and password.'
+      );
     }
-
-    const isEmail = identifier.includes('@');
-    const fallbackDemoUser: User = {
-      id: `demo-usr-${Date.now().toString(36)}`,
-      name: isEmail
-        ? identifier.split('@')[0].replace(/[._-]/g, ' ')
-        : 'Demo Client',
-      email: isEmail ? identifier : 'client@realityestates.ug',
-      phone: isEmail ? '+256 700 000 000' : identifier,
-      role: 'buyer',
-      verifiedIdentity: true
-    };
-
-    this.inMemoryDemoUser = fallbackDemoUser;
-    this.notifyDemoListeners('SIGNED_IN', fallbackDemoUser);
-    return {
-      user: fallbackDemoUser,
-      isDemoSession: true
-    };
   }
 
   /**
-   * Signs out the authenticated user via `supabase.auth.signOut()` and clears application user state.
+   * Signs out the current user via `supabase.auth.signOut()`.
    */
   public async signOut(): Promise<void> {
-    this.inMemoryDemoUser = null;
-
-    if (isSupabaseConfigured() && supabase) {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw mapSupabaseAuthError(error, 'Failed to sign out cleanly.');
-      }
-      return;
+    const client = getRequiredSupabaseClient();
+    const { error } = await client.auth.signOut();
+    if (error) {
+      throw mapSupabaseAuthError(
+        error,
+        'Unable to sign out completely. Please try again.'
+      );
     }
-
-    this.notifyDemoListeners('SIGNED_OUT', null);
   }
 
   /**
-   * Sends a password reset email via `supabase.auth.resetPasswordForEmail`.
+   * Sends a password reset email via Supabase Auth.
    */
   public async requestPasswordReset(email: string): Promise<void> {
-    const trimmed = (email || '').trim().toLowerCase();
-    if (!trimmed || !EMAIL_REGEX.test(trimmed)) {
+    const client = getRequiredSupabaseClient();
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
       throw new ServiceError(
         'Please enter a valid email address to receive a password reset link.',
         'VALIDATION_ERROR',
-        400
-      );
-    }
-
-    if (!isSupabaseConfigured() || !supabase) {
-      throw new ServiceError(
-        'Password reset emails require Supabase Authentication (VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY) to be configured.',
-        'STORAGE_NOT_CONFIGURED',
-        503
+        400,
+        { email: 'Valid email address is required.' }
       );
     }
 
     try {
       const redirectTo =
-        typeof window !== 'undefined' ? `${window.location.origin}/` : undefined;
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        typeof window !== 'undefined' ? window.location.origin : undefined;
+      const { error } = await client.auth.resetPasswordForEmail(trimmedEmail, {
         redirectTo
       });
       if (error) {
         throw mapSupabaseAuthError(
           error,
-          'Could not send password reset email. Please try again.'
+          'Unable to send password reset email. Please try again.'
         );
       }
     } catch (err) {
       throw mapSupabaseAuthError(
         err,
-        'Could not send password reset email. Please try again.'
+        'Unable to send password reset email. Please try again.'
       );
     }
   }
 
   /**
-   * Subscribes to authentication state transitions (`SIGNED_IN`, `SIGNED_OUT`, `TOKEN_REFRESHED`, `USER_UPDATED`).
-   * Returns an unsubscribe function.
+   * Subscribes to Supabase Auth state changes (`INITIAL_SESSION`, `SIGNED_IN`,
+   * `TOKEN_REFRESHED`, `USER_UPDATED`, `SIGNED_OUT`) and resolves the user's `profiles` row.
    */
   public onAuthStateChange(
     callback: (event: string, user: User | null) => void
   ): () => void {
-    if (isSupabaseConfigured() && supabase) {
-      const {
-        data: { subscription }
-      } = supabase.auth.onAuthStateChange((event, session) => {
-        if (!session?.user) {
-          callback(event, null);
-          return;
-        }
-
-        // Resolve profile asynchronously without blocking Supabase's internal auth lock
-        void (async () => {
-          const profileRow = await this.fetchProfileRowByUserId(session.user.id);
-          const domainUser = mapSupabaseUserAndProfileToDomainUser(
-            session.user,
-            profileRow
-          );
-          callback(event, domainUser);
-        })();
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
+    if (!isSupabaseConfigured()) {
+      return () => {};
     }
 
-    this.demoListeners.add(callback);
+    const client = getRequiredSupabaseClient();
+    const {
+      data: { subscription }
+    } = client.auth.onAuthStateChange((event, session) => {
+      if (!session?.user) {
+        callback(event, null);
+        return;
+      }
+
+      void this.syncProfileForAuthUser(session.user)
+        .then((resolvedUser) => {
+          callback(event, resolvedUser);
+        })
+        .catch(() => {
+          callback(event, mapProfileAndAuthToUser(session.user, null));
+        });
+    });
+
     return () => {
-      this.demoListeners.delete(callback);
+      subscription.unsubscribe();
     };
   }
 
-  // Aliases preserved for existing callers
+  // Method aliases for existing callers
   public async login(input: LoginInput): Promise<AuthSessionResponse> {
     return this.signIn(input);
   }
@@ -837,42 +774,23 @@ class AuthService implements IAuthService {
   public async logout(): Promise<void> {
     return this.signOut();
   }
-
-  /**
-   * Demo persona switcher — strictly disabled when Supabase Auth is configured.
-   */
-  public async loginAsDemoUser(user: User): Promise<AuthSessionResponse> {
-    if (isSupabaseConfigured()) {
-      throw new ServiceError(
-        'Demo persona switching is disabled when connected to Supabase Authentication. Please sign in with your account credentials.',
-        'FORBIDDEN',
-        403
-      );
-    }
-
-    const validated = validateDemoPersona(user);
-    if (!validated) {
-      throw new ServiceError(
-        'Invalid demo user profile selected.',
-        'VALIDATION_ERROR',
-        400
-      );
-    }
-
-    this.inMemoryDemoUser = validated;
-    this.notifyDemoListeners('SIGNED_IN', validated);
-    return {
-      user: validated,
-      isDemoSession: true
-    };
-  }
-
-  public getDemoUsers(): User[] {
-    if (isSupabaseConfigured()) {
-      return [];
-    }
-    return mockStorage.getDemoUsers();
-  }
 }
 
-export const authService: IAuthService = new AuthService();
+export const authService = new AuthService();
+
+export const signUp = (input: RegisterInput): Promise<AuthSessionResponse> =>
+  authService.signUp(input);
+
+export const signIn = (input: LoginInput): Promise<AuthSessionResponse> =>
+  authService.signIn(input);
+
+export const signOut = (): Promise<void> => authService.signOut();
+
+export const getCurrentSession = (): Promise<Session | null> =>
+  authService.getCurrentSession();
+
+export const getCurrentUser = (): Promise<User | null> =>
+  authService.getCurrentUser();
+
+export const getCurrentProfile = (): Promise<User | null> =>
+  authService.getCurrentProfile();

@@ -2,20 +2,21 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ServiceError } from '../types/api';
 
 /**
- * Single reusable Supabase client instance for the Reality Estates frontend.
+ * Single reusable Supabase client instance for the Reality Estates production frontend.
  *
- * Security Rules:
+ * Security & Production Rules:
  * - Only public browser-safe variables (`VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`)
- *   may be used here.
+ *   are read here.
  * - NEVER place service-role or secret keys in frontend code or `VITE_` variables.
- * - When environment variables are not configured, `supabase` is `null` and the app
- *   operates in offline Demo Mode without crashing on startup.
+ * - If environment variables are missing, the application fails honestly with a configuration
+ *   error and NEVER falls back to mock or demo data.
  */
 
 const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
   .trim()
   .replace(/\/rest\/v1\/?$/i, '')
   .replace(/\/+$/, '');
+
 const rawSupabasePublishableKey = (
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
@@ -33,6 +34,24 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
+export function getSupabaseConfigurationError(): string | null {
+  if (isSupabaseConfigured()) {
+    return null;
+  }
+
+  const isDev = Boolean(import.meta.env.DEV);
+  if (isDev) {
+    const missing: string[] = [];
+    if (!rawSupabaseUrl) missing.push('VITE_SUPABASE_URL');
+    if (!rawSupabasePublishableKey) missing.push('VITE_SUPABASE_PUBLISHABLE_KEY');
+    return `Missing required Supabase environment variable(s): ${
+      missing.join(', ') || 'VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY'
+    }. Set these in your .env file and restart the Vite development server.`;
+  }
+
+  return 'Reality Estates could not initialize its backend connection. Please try again later or contact support.';
+}
+
 export const supabase: SupabaseClient | null = isSupabaseConfigured()
   ? createClient(rawSupabaseUrl, rawSupabasePublishableKey, {
       auth: {
@@ -46,7 +65,8 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured()
 export function getRequiredSupabaseClient(): SupabaseClient {
   if (!supabase) {
     throw new ServiceError(
-      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your environment to enable cloud storage and database persistence.',
+      getSupabaseConfigurationError() ||
+        'Reality Estates could not connect to the server. Please check your configuration.',
       'STORAGE_NOT_CONFIGURED',
       503
     );

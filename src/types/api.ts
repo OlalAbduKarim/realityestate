@@ -1,5 +1,6 @@
 import {
   CurrencyCode,
+  Enquiry,
   EnquiryStatus,
   FilterState,
   LandTenure,
@@ -18,7 +19,7 @@ import {
   VerificationStatus,
   ViewingRequest,
   ViewingStatus,
-  Enquiry
+  PaymentStatus
 } from './property';
 
 /**
@@ -27,9 +28,16 @@ import {
  */
 export type ServiceErrorCode =
   | 'VALIDATION_ERROR'
+  | 'INVALID_FILE_TYPE'
+  | 'FILE_TOO_LARGE'
+  | 'UPLOAD_FAILED'
+  | 'DELETE_FAILED'
   | 'NOT_FOUND'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
+  | 'EMAIL_NOT_CONFIRMED'
+  | 'WEAK_PASSWORD'
+  | 'SESSION_EXPIRED'
   | 'NETWORK_ERROR'
   | 'STORAGE_ERROR'
   | 'STORAGE_NOT_CONFIGURED'
@@ -175,16 +183,27 @@ export interface UpdatePropertyInput extends Partial<CreatePropertyInput> {
 
 export interface UpdatePropertyVerificationInput {
   propertyId: string;
-  status: VerificationStatus;
+  status?: VerificationStatus;
+  verificationStatus?: VerificationStatus;
   notes?: string;
-  checklist?: Partial<Pick<
-    PropertyVerificationDetails,
-    'advertiserVerified' | 'locationConfirmed' | 'priceConfirmed' | 'availabilityConfirmed'
-  >>;
+  advertiserVerified?: boolean;
+  locationConfirmed?: boolean;
+  priceConfirmed?: boolean;
+  availabilityConfirmed?: boolean;
+  checklist?: Partial<
+    Pick<
+      PropertyVerificationDetails,
+      | 'advertiserVerified'
+      | 'locationConfirmed'
+      | 'priceConfirmed'
+      | 'availabilityConfirmed'
+    >
+  >;
   publishListing?: boolean;
 }
 
 export interface PropertyQueryFilters extends Partial<FilterState> {
+  listingStatus?: ListingStatus | 'all';
   includeUnpublished?: boolean;
   advertiserId?: string;
 }
@@ -242,6 +261,7 @@ export interface UpdateViewingStatusInput {
 export interface UpdateTransactionStageInput {
   transactionId: string;
   stage: TransactionStage;
+  paymentStatus?: PaymentStatus;
 }
 
 /**
@@ -287,7 +307,6 @@ export interface RegisterInput {
 
 export interface AuthSessionResponse {
   user: User;
-  isDemoSession: boolean;
   requiresEmailConfirmation?: boolean;
 }
 
@@ -393,6 +412,4 @@ export interface IAuthService {
   login(input: LoginInput): Promise<AuthSessionResponse>;
   register(input: RegisterInput): Promise<AuthSessionResponse>;
   logout(): Promise<void>;
-  loginAsDemoUser(user: User): Promise<AuthSessionResponse>;
-  getDemoUsers(): User[];
 }

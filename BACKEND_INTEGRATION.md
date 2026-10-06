@@ -1,166 +1,114 @@
-# Reality Estates — Backend, Supabase Auth & Storage Integration Guide
+# Reality Estates — Production Supabase Backend Integration Guide
 
-This document describes the architecture, database contracts, authentication flows, environment variables, and Supabase Storage configuration required by the Reality Estates frontend (`React 19 + TypeScript + Vite`).
+This document describes the production architecture, database contracts, authentication flows, Row-Level Security (RLS) requirements, and Supabase Storage configuration for the Reality Estates frontend (`React 19 + TypeScript + Vite`).
 
 ---
 
-## 1. Environment Variables
+## 1. Production Architecture Overview
 
-Configure the following browser-safe variables in `.env.local` (or deployment environment):
+Reality Estates operates exclusively against Supabase as its authoritative single source of truth:
+
+```text
+React 19 + TypeScript Frontend
+              ↓
+Service Layer (src/services/*)
+              ↓
+Singleton Supabase Client (src/lib/supabase.ts)
+              ↓
+Supabase Auth  •  Supabase PostgreSQL  •  Supabase Storage
+```
+
+There is **no** Demo Mode, **no** mock data fallback, and **no** `localStorage`-based persistence for domain records or user roles.
+
+---
+
+## 2. Required Environment Variables
+
+Configure the following browser-safe variables in `.env` / `.env.local` (or deployment environment):
 
 ```env
-# Optional custom REST API base URL (leave empty when using Supabase directly or Demo Mode)
-VITE_API_BASE_URL=
-
-# Supabase Project URL & Public Publishable (or Anon) Key
 VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=<your-public-anon-or-publishable-key>
-
-# Optional Storage Bucket override (defaults to "property-images")
+VITE_SUPABASE_PUBLISHABLE_KEY=<your-public-publishable-key>
 VITE_SUPABASE_STORAGE_BUCKET=property-images
 ```
 
-### Security Rules
+### Startup Configuration Check & Security Rules
+- On startup, `src/lib/supabase.ts` and `src/App.tsx` verify that `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are present.
+- If either variable is missing, the application displays an explicit configuration error screen in development and a safe service-unavailable screen in production. It never switches to a fake or simulated backend.
 - **NEVER** add `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, or database credentials to `VITE_*` variables or frontend source code.
-- Never store passwords, raw access tokens, refresh tokens, or user roles in custom application `localStorage` keys.
-- If `VITE_SUPABASE_URL` or `VITE_SUPABASE_PUBLISHABLE_KEY` is omitted, the frontend automatically runs in **Interactive Demo Mode** using in-memory demo sessions without pretending to be authenticated against Supabase.
 
 ---
 
-## 2. Supabase Authentication & `profiles` Architecture
-
-### Single Reusable Supabase Client (`src/lib/supabase.ts`)
-- A singleton client is initialized via `createClient(supabaseUrl, supabasePublishableKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })`.
-- Session tokens and refresh lifecycle are managed exclusively by `@supabase/supabase-js`.
+## 3. Authentication & Roles (`Supabase Auth` + `public.profiles`)
 
 ### Authentication Service (`src/services/authService.ts`)
-Exposes the authoritative authentication contract:
-- `signUp(input)` / `register(input)`
-- `signIn(input)` / `login(input)`
-- `signOut()` / `logout()`
-- `getCurrentSession()`
-- `getCurrentUser()`
-- `getCurrentProfile()`
-- `onAuthStateChange(listener)`
-- `requestPasswordReset(email)`
+- `signUp(input)` / `register(input)`: Creates an account in `auth.users` via `supabase.auth.signUp()` with metadata (`full_name`, `name`, `phone`, `role`, `company`) and synchronizes `public.profiles` (`id = auth.users.id`).
+- `signIn(input)` / `login(input)`: Authenticates with `supabase.auth.signInWithPassword()` and loads the authoritative profile from `public.profiles`.
+- `signOut()` / `logout()`: Terminates the session via `supabase.auth.signOut()` and clears user-scoped state.
+- `getCurrentSession()`, `getCurrentUser()`, `getCurrentProfile()`, `onAuthStateChange(listener)`, `requestPasswordReset(email)`.
 
-### Registration & Role Restrictions
-- Public registration collects: `name`, `email`, `phone`, `password`, and `role`.
-- Allowed self-selected roles (`PublicRegistrableRole`):
-  - `buyer`
-  - `owner`
-  - `agent`
-  - `developer`
-- **Admin Prevention:** Public registration strictly rejects `'admin'` on both the UI (`AuthModal.tsx`) and service validation (`sanitizePublicRole`). Admin accounts can only be promoted server-side in PostgreSQL.
-
-### Profile Synchronization (`public.profiles`)
-1. `supabase.auth.signUp()` passes `full_name`, `name`, `phone`, and sanitized `role` in `options.data` so the PostgreSQL `on_auth_user_created` trigger (`handle_new_user()`) immediately populates `public.profiles` with `id = auth.users.id`.
-2. When an authenticated session is active, `syncProfileForAuthUser` inspects `public.profiles` for `id = auth.users.id`:
-   - If the trigger row already exists, it updates any missing `phone` / `full_name` / `role` fields without overwriting an existing `'admin'` role or creating duplicate rows.
-   - If no row exists yet, it inserts the profile linked to `auth.users.id`.
-3. `getCurrentProfile()` always reads the authoritative role and verification status from `public.profiles`.
-
-### Centralized React Auth State & Protected Functionality
-- `AppContext` maintains `authStatus: 'loading' | 'authenticated' | 'unauthenticated'` and `currentUser: User | null`.
-- On initial load, `authService.getCurrentSession()` restores the session and `authService.onAuthStateChange(...)` subscribes to `SIGNED_IN`, `TOKEN_REFRESHED`, `USER_UPDATED`, and `SIGNED_OUT` events.
-- `<ProtectedRoute>` guards `/dashboard`, `/list-property`, `/edit-property/:id`, and `/admin` (`requiredRole="admin"`), rendering a verification spinner while `authStatus === 'loading'` so protected content never flashes before session restoration finishes.
-- Protected actions (saving properties, submitting enquiries, scheduling viewings, listing/editing properties, transaction management, and admin operations) require an authenticated user. Public browsing of published properties remains open to all visitors.
+### Roles & Security
+- **Public Registration Roles (`PublicRegistrableRole`):** `buyer`, `owner`, `agent`, `developer`.
+- **Admin Restriction:** Public registration strictly blocks `admin` creation in the UI (`AuthModal.tsx`), in `authService.ts` (`sanitizePublicRole`), and via the PostgreSQL `on_auth_user_created` trigger.
+- **Authorization:** Frontend role checks (`currentUser.role === 'admin'`) are used solely for UX rendering and route guards (`<ProtectedRoute requiredRole="admin">`). Actual data authorization is enforced by PostgreSQL Row-Level Security (RLS).
 
 ---
 
-## 3. Supabase Storage Configuration
+## 4. Public vs. Authenticated Features
 
-### Expected Storage Bucket
-- **Bucket Name:** `property-images` (configurable via `VITE_SUPABASE_STORAGE_BUCKET`)
-- **Public Access:** Public read access (`public = true`) so property cards and galleries can resolve permanent URLs via `supabase.storage.from('property-images').getPublicUrl(path)`.
+### Publicly Accessible (No Account Required)
+- Home page (`/`), Search & Map Explorer (`/search`), and Property Detail pages (`/properties/:slug`).
+- Viewing published property listings (`listing_status = 'published'`), photographs, pricing, Ugandan district/location details, verification badges, and features.
+- When no published properties match or exist in Supabase, a genuine empty state (`"No properties are currently available."`) is displayed.
 
-### Image Path Convention
-All uploaded property photographs are stored under a collision-resistant, deterministic folder hierarchy:
+### Protected Features (Requires Authenticated Supabase Session)
+- Saving/favoriting properties (`saved_properties`)
+- Submitting enquiries (`enquiries`) and contacting advertisers
+- Requesting property viewings (`viewing_requests`)
+- Creating, editing, and submitting property listings (`/list-property`, `/edit-property/:id`)
+- Viewing user dashboard (`/dashboard`)
+- Managing transaction stages (`transactions`)
+- Admin Operations Desk (`/admin`, restricted to `profile.role = 'admin'`)
 
-```text
-properties/{propertyId}/{imageUuid}.{extension}
-```
-
-**Example:**
-```text
-properties/8f9d2a1c-4b3e-4d5a-9c1b-7e6f5a4b3c2d/c4e1f9a0-3b2d-4e8f-a1b2-9d8c7b6a5e4f.webp
-```
-
-- Original user filenames are **never** used as the storage object path.
-- Uploads use `upsert: false` to prevent accidental file overwrites.
-
-### Accepted Formats & Maximum File Size
-- **Accepted MIME Types:**
-  - `image/jpeg` / `image/jpg` (`.jpg`)
-  - `image/png` (`.png`)
-  - `image/webp` (`.webp`)
-- **Maximum File Size:** **5 MB** (`5,242,880` bytes) per photograph, enforced on the client before any network transfer begins.
+Unauthenticated visitors attempting any protected action are prompted with `"Create an account or sign in to continue."` via `AuthModal` and returned to their attempted action after signing in.
 
 ---
 
-## 4. Local Previews vs. Persisted Images
+## 5. Database Tables & Workflows
 
-The frontend strictly separates temporary browser previews from persisted property photographs:
+### A. Property Workflow (`public.properties` & `public.property_verifications`)
+1. **Creation (`propertyService.createProperty`):**
+   - Authenticated advertiser submits the listing form.
+   - Creates a row in `public.properties` with `advertiser_id = auth.uid()`, `listing_status = 'pending'` (or `'draft'`), and `verification_status = 'pending'`.
+   - Returns the created property UUID (`property.id`).
+2. **Verification & Publication (`propertyService.updatePropertyVerification`):**
+   - Authorized admins inspect the listing in `/admin` (`advertiser_verified`, `location_confirmed`, `price_confirmed`, `availability_confirmed`).
+   - Updates `public.properties` (`verification_status`, `listing_status = 'published'`) and upserts the audit record in `public.property_verifications`.
 
-### A. Local Selected File (`LocalSelectedImage`)
-- Created immediately when a user selects files from their device in `ListPropertyView`.
-- Contains:
-  - `file`: Browser `File` instance
-  - `previewUrl`: Temporary `blob:` URL created via `URL.createObjectURL(file)`
-  - `uploadState`: `'selected' | 'uploading' | 'uploaded' | 'upload_failed'`
-  - `uploadProgress`: `0–100`
-  - `errorMessage`: Optional error message if upload fails
-- **Lifecycle Guarantees:**
-  - `blob:` URLs are used strictly for immediate in-browser preview.
-  - `URL.revokeObjectURL(previewUrl)` is called when a file is removed, once its upload completes, or when the component unmounts.
-  - `blob:` and `data:` URLs are **never** sent to PostgreSQL, **never** stored in `property.images`, and **never** persisted to `localStorage`.
+### B. Image Upload Workflow (`property-images` Bucket & `public.property_images`)
+1. **Local Selection:** Selecting files in `ListPropertyView` creates temporary browser previews (`URL.createObjectURL(file)`), which are revoked on removal, upload completion, or unmount. `blob:` URLs are never persisted.
+2. **Validation:** Accepts only `image/jpeg`, `image/png`, and `image/webp` up to **5 MB** per file.
+3. **Storage Upload (`storageService.uploadPropertyImage`):**
+   - Uploads to bucket `property-images` at path `properties/{propertyId}/{imageUuid}.{extension}` with `upsert: false`.
+   - Resolves the public URL via `getPublicUrl()` and inserts a row into `public.property_images` (`id`, `property_id`, `storage_path`, `public_url`, `sort_order`, `alt_text`).
+   - If the database insert fails, the uploaded Storage object is automatically removed.
 
-### B. Persisted Property Image (`PersistedPropertyImage`)
-- Represents a permanently stored image backed by the `property_images` table in Supabase PostgreSQL and/or a permanent `https://` URL.
-- Contains:
-  - `id`: Database image record UUID
-  - `propertyId`: Parent property UUID
-  - `storagePath`: Supabase Storage path (`properties/{propertyId}/{uuid}.{ext}`)
-  - `url`: Permanent public URL
-  - `displayOrder`: Zero-based integer (`0, 1, 2, ...`) controlling gallery order (`0` is the primary cover photo)
-  - `altText`: Optional accessible caption
+### C. Saved Properties Workflow (`public.saved_properties`)
+- `savedPropertyService` reads, upserts (`onConflict: 'user_id,property_id'`), and deletes rows in `public.saved_properties` (`user_id`, `property_id`, `created_at`).
 
----
+### D. Enquiry Workflow (`public.enquiries`)
+- `enquiryService.createEnquiry` looks up the property's `advertiser_id` as `assigned_rep_id` and inserts a row into `public.enquiries` (`id`, `property_id`, `customer_id`, `assigned_rep_id`, `customer_name`, `customer_phone`, `customer_email`, `subject`, `message`, `status`).
 
-## 5. Database Schema Compatibility (`profiles` & `property_images`)
+### E. Viewing Request Workflow (`public.viewing_requests`)
+- `viewingService.createViewingRequest` looks up the property's `advertiser_id` as `assigned_agent_id` and inserts a row into `public.viewing_requests` (`id`, `property_id`, `customer_id`, `assigned_agent_id`, `customer_name`, `customer_phone`, `customer_email`, `preferred_date`, `preferred_time`, `message`, `status`).
 
-### `public.profiles`
-| Frontend Field | Primary DB Column | Supported Fallback Columns | Type | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `id` | `id` | — | `uuid` (PK) | References `auth.users(id) ON DELETE CASCADE` |
-| `name` | `full_name` | `name` | `text` | User's display name |
-| `email` | `email` | — | `text` | User's email address |
-| `phone` | `phone` | — | `text` | Ugandan contact phone number |
-| `role` | `role` | — | `text` | `'buyer' \| 'owner' \| 'agent' \| 'developer' \| 'admin'` |
-| `verified` | `verified` | `is_verified` | `boolean` | Account verification badge status |
-| `agencyName` | `agency_name` | — | `text` | Optional agency or developer company name |
-
-### `public.property_images`
-| Frontend Field | Primary DB Column | Supported Fallback Columns | Type | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `id` | `id` | — | `uuid` (PK) | Unique record identifier |
-| `propertyId` | `property_id` | — | `uuid` (FK) | References `properties(id) ON DELETE CASCADE` |
-| `storagePath` | `storage_path` | — | `text` | Object path inside `property-images` bucket |
-| `url` | `url` | `image_url`, `public_url` | `text` | Permanent public URL |
-| `displayOrder` | `display_order` | `sort_order` | `integer` | Zero-based display sequence |
-| `altText` | `alt_text` | `caption` | `text` | Optional image description |
-| `createdAt` | `created_at` | — | `timestamptz` | Timestamp of record creation |
+### F. Transaction Workflow (`public.transactions`)
+- `transactionService` queries `public.transactions` and updates deal `stage` (`Enquiry`, `Contacted`, `Viewing`, `Negotiation`, `Offer`, `Closed`) while keeping commission and revenue calculations server/database-controlled.
 
 ---
 
-## 6. Recommended Supabase Dashboard Configuration
+## 6. Deployment & Supabase Dashboard Checklist
 
-1. **Authentication -> Providers -> Email:**
-   - Enable Email provider.
-   - Configure **Confirm email** according to your launch preference (the frontend supports both immediate session creation and pending email confirmation states).
-2. **Authentication -> URL Configuration:**
-   - Set **Site URL** to your production/preview domain.
-   - Add `<your-domain>/**` to **Redirect URLs** for email confirmation and password reset links.
-3. **Database RLS Policies (`public.profiles`):**
-   - Ensure users can `SELECT` their own profile (`auth.uid() = id`) and public advertiser profiles.
-   - Ensure `INSERT` / `UPDATE` policies on `public.profiles` enforce `auth.uid() = id` and prevent users from setting `role = 'admin'` via client-side updates.
+1. **Environment Variables:** Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are configured in your hosting environment.
+2. **Authentication URL Configuration:** In **Supabase Dashboard → Authentication → URL Configuration**, set your production **Site URL** and add `<your-domain>/**` to **Redirect URLs**.
+3. **Storage Bucket (`property-images`):** Ensure the `property-images` bucket exists with public read access (`public = true`) and RLS policies allowing authenticated uploads/deletes under `properties/{propertyId}/*`.

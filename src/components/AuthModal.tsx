@@ -10,8 +10,20 @@ import {
   User as UserIcon,
   ArrowRight,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Loader2,
+  KeyRound
 } from 'lucide-react';
+
+const PUBLIC_REGISTRATION_ROLES: Array<{
+  role: PublicRegistrableRole;
+  label: string;
+}> = [
+  { role: 'buyer', label: 'Buyer / Tenant' },
+  { role: 'agent', label: 'Broker / Agent' },
+  { role: 'owner', label: 'Landlord / Owner' },
+  { role: 'developer', label: 'Developer' }
+];
 
 export const AuthModal: React.FC = () => {
   const {
@@ -19,450 +31,339 @@ export const AuthModal: React.FC = () => {
     closeAuthModal,
     authModalMessage,
     login,
-    loginAs,
     registerUser,
-    requestPasswordReset,
-    demoUsers,
-    isDemoMode,
-    isAuthLoading,
-    authError
+    requestPasswordReset
   } = useApp();
 
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
-  const [method, setMethod] = useState<'email' | 'phone'>('email');
-
-  // Form fields
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('+256 7');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<PublicRegistrableRole>('buyer');
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [infoNotice, setInfoNotice] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [infoBanner, setInfoBanner] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isAuthModalOpen) return null;
 
+  const resetFormMessages = () => {
+    setFormError(null);
+    setInfoBanner(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || isAuthLoading) return;
-    setLocalError(null);
-    setInfoNotice(null);
+    if (isSubmitting) return;
 
-    if (authMode === 'reset') {
-      const trimmedEmail = email.trim();
-      if (!trimmedEmail || !trimmedEmail.includes('@')) {
-        setLocalError('Please enter the email address associated with your account.');
-        return;
-      }
-      setIsSubmitting(true);
-      try {
-        await requestPasswordReset(trimmedEmail);
-        setInfoNotice(
-          'Password reset instructions have been sent to your email. Check your inbox to set a new password.'
+    resetFormMessages();
+    setIsSubmitting(true);
+
+    try {
+      if (mode === 'reset') {
+        await requestPasswordReset(email.trim());
+        setInfoBanner(
+          `Password reset link sent to ${email.trim()}. Please check your inbox.`
         );
-      } catch (err) {
-        if (err instanceof Error) {
-          setLocalError(err.message);
-        }
-      } finally {
-        setIsSubmitting(false);
-      }
-      return;
-    }
-
-    if (authMode === 'signup') {
-      if (!name.trim()) {
-        setLocalError('Please enter your full name.');
-        return;
-      }
-      if (!email.trim() || !email.includes('@')) {
-        setLocalError('Please enter a valid email address.');
-        return;
-      }
-      if (!phone.trim() || phone.replace(/\D/g, '').length < 7) {
-        setLocalError('Please enter a valid Ugandan phone number.');
-        return;
-      }
-      if (!password || password.length < 6) {
-        setLocalError('Please enter a password of at least 6 characters.');
         return;
       }
 
-      setIsSubmitting(true);
-      try {
-        const result = await registerUser(
+      if (mode === 'login') {
+        await login({
+          identifier: email.trim(),
+          password,
+          method: 'email'
+        });
+        closeAuthModal();
+      } else {
+        const session = await registerUser(
           name.trim(),
           phone.trim(),
           email.trim(),
           role,
           password
         );
-        if (result.requiresEmailConfirmation) {
-          setInfoNotice(
-            'Account created! Please check your email inbox and click the confirmation link before signing in.'
+
+        if (session.requiresEmailConfirmation) {
+          setInfoBanner(
+            `We sent a confirmation link to ${email.trim()}. Please verify your email address, then sign in below.`
           );
-          setAuthMode('signin');
+          setMode('login');
           setPassword('');
+          return;
         }
-      } catch (err) {
-        if (err instanceof Error) {
-          setLocalError(err.message);
-        }
-      } finally {
-        setIsSubmitting(false);
+
+        closeAuthModal();
       }
-      return;
-    }
-
-    // Sign In flow
-    const trimmedIdentifier = method === 'phone' ? phone.trim() : email.trim();
-    if (!trimmedIdentifier) {
-      setLocalError(
-        method === 'phone'
-          ? 'Please enter your Ugandan phone number.'
-          : 'Please enter your email address.'
-      );
-      return;
-    }
-
-    if (!password) {
-      setLocalError('Please enter your password.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await login({
-        identifier: trimmedIdentifier,
-        password,
-        method
-      });
     } catch (err) {
-      if (err instanceof Error) {
-        setLocalError(err.message);
-      }
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : 'Authentication failed. Please check your credentials and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const displayError = localError || authError;
-  const buyerPersona = demoUsers.find((u) => u.role === 'buyer') || demoUsers[0];
-  const agentPersona = demoUsers.find((u) => u.role === 'agent') || demoUsers[1];
-  const adminPersona = demoUsers.find((u) => u.role === 'admin') || demoUsers[2];
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in"
-      onClick={closeAuthModal}
-    >
-      <div
-        className="bg-white dark:bg-stone-900 rounded-2xl max-w-md w-full p-6 md:p-8 shadow-2xl border border-stone-100 dark:border-stone-800 relative animate-in zoom-in-95 transition-colors max-h-[92vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close Button */}
-        <button
-          onClick={closeAuthModal}
-          className="absolute top-5 right-5 p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
-          aria-label="Close authentication modal"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        {/* Modal Header */}
-        <div className="text-left mb-6">
-          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full mb-3">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>{isDemoMode ? 'Demo Verification' : 'Supabase Authentication'}</span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/75 backdrop-blur-xs animate-fade-in">
+      <div className="relative w-full max-w-md bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden">
+        {/* Header */}
+        <div className="p-6 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between bg-stone-50/60 dark:bg-stone-950/60">
+          <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-semibold text-sm">
+            <ShieldCheck className="w-5 h-5" />
+            <span>Reality Estates Account</span>
           </div>
-          <h3 className="text-xl font-serif font-bold text-stone-900 dark:text-white tracking-tight">
-            {authMode === 'signup'
-              ? 'Create a Free Account'
-              : authMode === 'reset'
-              ? 'Reset Your Password'
-              : 'Sign in to Reality Estates'}
-          </h3>
-          <p className="text-xs text-stone-600 dark:text-stone-400 mt-1.5 leading-relaxed">
+          <button
+            onClick={closeAuthModal}
+            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/50 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+            aria-label="Close authentication modal"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Contextual Prompt Banner */}
+        {authModalMessage && (
+          <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200/60 dark:border-amber-800/40 text-amber-800 dark:text-amber-300 text-xs font-medium leading-relaxed">
             {authModalMessage}
-          </p>
-        </div>
-
-        {/* Mode switcher tabs */}
-        <div className="flex rounded-lg bg-stone-100 dark:bg-stone-800 p-1 mb-5">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('signin');
-              setLocalError(null);
-              setInfoNotice(null);
-            }}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              authMode === 'signin'
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('signup');
-              setLocalError(null);
-              setInfoNotice(null);
-            }}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              authMode === 'signup'
-                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-xs'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
-
-        {infoNotice && (
-          <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
-            <span>{infoNotice}</span>
           </div>
         )}
 
-        {displayError && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{displayError}</span>
+        {/* Email Confirmation / Password Reset Info Banner */}
+        {infoBanner && (
+          <div className="mx-6 mt-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-300 text-xs flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{infoBanner}</span>
           </div>
         )}
 
-        {/* Input channel switch for Sign In */}
-        {authMode === 'signin' && (
-          <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400 mb-4 px-1">
-            <span>Sign in method:</span>
-            <div className="flex gap-2">
+        {/* Error Banner */}
+        {formError && (
+          <div className="mx-6 mt-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/50 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{formError}</span>
+          </div>
+        )}
+
+        {/* Main Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <h2 className="text-2xl font-serif font-bold text-stone-900 dark:text-white">
+              {mode === 'login'
+                ? 'Welcome back'
+                : mode === 'signup'
+                ? 'Create your account'
+                : 'Reset your password'}
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+              {mode === 'login'
+                ? 'Sign in to access saved properties, enquiries, and viewing requests.'
+                : mode === 'signup'
+                ? 'Join Uganda’s verified property marketplace.'
+                : 'Enter your registered email address and we will send you a password reset link.'}
+            </p>
+          </div>
+
+          {/* Mode Tabs */}
+          {mode !== 'reset' && (
+            <div className="grid grid-cols-2 p-1 bg-stone-100 dark:bg-stone-800 rounded-lg text-xs font-medium">
               <button
                 type="button"
-                onClick={() => setMethod('email')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded border text-xs font-medium transition-colors ${
-                  method === 'email'
-                    ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                    : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+                onClick={() => {
+                  setMode('login');
+                  resetFormMessages();
+                }}
+                className={`py-2 rounded-md transition-all cursor-pointer ${
+                  mode === 'login'
+                    ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
+                    : 'text-stone-600 dark:text-stone-400'
                 }`}
               >
-                <Mail className="w-3 h-3" />
-                Email
+                Sign In
               </button>
               <button
                 type="button"
-                onClick={() => setMethod('phone')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded border text-xs font-medium transition-colors ${
-                  method === 'phone'
-                    ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                    : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+                onClick={() => {
+                  setMode('signup');
+                  resetFormMessages();
+                }}
+                className={`py-2 rounded-md transition-all cursor-pointer ${
+                  mode === 'signup'
+                    ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
+                    : 'text-stone-600 dark:text-stone-400'
                 }`}
               >
-                <Phone className="w-3 h-3" />
-                Phone (Uganda)
+                Create Account
               </button>
             </div>
+          )}
+
+          {/* Sign Up Extra Fields */}
+          {mode === 'signup' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  Full Name
+                </label>
+                <div className="relative">
+                  <UserIcon className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g., Grace Nakato"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  Ugandan Mobile Number (WhatsApp & Calls)
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+256 772 123 456"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  I am joining as a:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PUBLIC_REGISTRATION_ROLES.map((item) => (
+                    <button
+                      key={item.role}
+                      type="button"
+                      onClick={() => setRole(item.role)}
+                      className={`py-2 px-3 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+                        role === item.role
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-500'
+                          : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Email Input */}
+          <div>
+            <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@domain.com"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+              />
+            </div>
           </div>
-        )}
 
-        {/* Auth Form */}
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {authMode === 'signup' && (
-            <div>
-              <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                Full Name
-              </label>
-              <div className="relative">
-                <UserIcon className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Ronald Kato"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
-                />
-              </div>
-            </div>
-          )}
-
-          {(authMode === 'signup' || authMode === 'reset' || method === 'email') && (
-            <div>
-              <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
-                <input
-                  type="email"
-                  required
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
-                />
-              </div>
-            </div>
-          )}
-
-          {(authMode === 'signup' || (authMode === 'signin' && method === 'phone')) && (
-            <div>
-              <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                Ugandan Mobile Number
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
-                <input
-                  type="tel"
-                  required
-                  placeholder="+256 772 000 000"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
-                />
-              </div>
-            </div>
-          )}
-
-          {authMode !== 'reset' && (
+          {/* Password Input */}
+          {mode !== 'reset' && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-medium text-stone-700 dark:text-stone-300">
-                  {authMode === 'signup' ? 'Password (min. 6 characters)' : 'Password'}
+                  Password
                 </label>
-                {authMode === 'signin' && (
+                {mode === 'login' && (
                   <button
                     type="button"
                     onClick={() => {
-                      setAuthMode('reset');
-                      setLocalError(null);
-                      setInfoNotice(null);
+                      setMode('reset');
+                      resetFormMessages();
                     }}
-                    className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
+                    className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
                   >
                     Forgot password?
                   </button>
                 )}
               </div>
               <div className="relative">
-                <Lock className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
+                <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
                   required
-                  minLength={authMode === 'signup' ? 6 : undefined}
-                  placeholder="••••••••"
+                  minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
+                  placeholder="••••••••"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
               </div>
+              {mode === 'signup' && (
+                <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
+                  Must be at least 6 characters.
+                </p>
+              )}
             </div>
           )}
 
-          {authMode === 'signup' && (
-            <div>
-              <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                I am primarily joining as:
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(
-                  [
-                    { value: 'buyer', label: 'Buyer / Tenant' },
-                    { value: 'owner', label: 'Property Owner' },
-                    { value: 'agent', label: 'Licensed Agent' },
-                    { value: 'developer', label: 'Developer' }
-                  ] as const
-                ).map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setRole(option.value)}
-                    className={`py-1.5 px-2 text-xs rounded-lg border text-center font-medium transition-colors ${
-                      role === option.value
-                        ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                        : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* Submit CTA */}
           <button
             type="submit"
-            disabled={isSubmitting || isAuthLoading}
-            className="w-full mt-2 py-2.5 px-4 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white disabled:opacity-50 text-white dark:text-stone-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+            disabled={isSubmitting}
+            className="w-full py-3 px-4 rounded-lg bg-emerald-900 hover:bg-emerald-800 disabled:opacity-60 text-white font-medium text-sm flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
           >
-            <span>
-              {isSubmitting
-                ? 'Processing...'
-                : authMode === 'signup'
-                ? 'Create Free Account'
-                : authMode === 'reset'
-                ? 'Send Password Reset Link'
-                : 'Sign In'}
-            </span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>
+                  {mode === 'login'
+                    ? 'Signing In...'
+                    : mode === 'signup'
+                    ? 'Creating Account...'
+                    : 'Sending Reset Link...'}
+                </span>
+              </>
+            ) : (
+              <>
+                {mode === 'reset' && <KeyRound className="w-4 h-4" />}
+                <span>
+                  {mode === 'login'
+                    ? 'Sign In'
+                    : mode === 'signup'
+                    ? 'Create Account'
+                    : 'Send Password Reset Email'}
+                </span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
 
-          {authMode === 'reset' && (
+          {mode === 'reset' && (
             <button
               type="button"
               onClick={() => {
-                setAuthMode('signin');
-                setLocalError(null);
-                setInfoNotice(null);
+                setMode('login');
+                resetFormMessages();
               }}
-              className="w-full py-1.5 text-xs text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white font-medium text-center"
+              className="w-full py-2 text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               Back to Sign In
             </button>
           )}
         </form>
-
-        {/* 1-Click Demo Profiles (Strictly isolated to offline Demo Mode when Supabase is not configured) */}
-        {isDemoMode && demoUsers.length > 0 && (
-          <div className="mt-5 pt-4 border-t border-stone-100 dark:border-stone-800">
-            <p className="text-[11px] font-medium text-stone-400 dark:text-stone-500 mb-2 uppercase tracking-wider text-center">
-              Offline Demo Mode — Test with pre-seeded personas:
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {buyerPersona && (
-                <button
-                  type="button"
-                  onClick={() => void loginAs(buyerPersona)}
-                  className="py-1.5 px-2 text-[11px] bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-300 text-center font-medium transition-colors"
-                >
-                  Buyer
-                </button>
-              )}
-              {agentPersona && (
-                <button
-                  type="button"
-                  onClick={() => void loginAs(agentPersona)}
-                  className="py-1.5 px-2 text-[11px] bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-300 text-center font-medium transition-colors"
-                >
-                  Agent
-                </button>
-              )}
-              {adminPersona && (
-                <button
-                  type="button"
-                  onClick={() => void loginAs(adminPersona)}
-                  className="py-1.5 px-2 text-[11px] bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 rounded-md text-emerald-900 dark:text-emerald-300 text-center font-semibold transition-colors"
-                >
-                  Admin
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

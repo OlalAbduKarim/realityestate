@@ -26,8 +26,10 @@ import { savedPropertyService } from '../services/savedPropertyService';
 import { enquiryService } from '../services/enquiryService';
 import { viewingService } from '../services/viewingService';
 import { transactionService } from '../services/transactionService';
-import { isSupabaseConfigured } from '../lib/supabase';
-import { mockStorage } from '../mocks/mockStorage';
+import {
+  getSupabaseConfigurationError,
+  isSupabaseConfigured
+} from '../lib/supabase';
 
 export interface Toast {
   id: string;
@@ -50,11 +52,8 @@ export interface AppContextType {
   currentProfile: User | null;
   isAuthenticated: boolean;
   isAuthLoading: boolean;
-  isDemoMode: boolean;
   authError: string | null;
-  demoUsers: User[];
   login: (input: LoginInput) => Promise<User>;
-  loginAs: (user: User) => Promise<void>;
   registerUser: (
     name: string,
     phone: string,
@@ -68,9 +67,12 @@ export interface AppContextType {
 
   // Global loading, storage & error state
   isDataLoading: boolean;
+  isUserDashboardLoading: boolean;
   isStorageConfigured: boolean;
+  configurationError: string | null;
   serviceError: string | null;
   clearServiceError: () => void;
+  refreshProperties: () => Promise<void>;
 
   // Auth modal
   isAuthModalOpen: boolean;
@@ -159,13 +161,13 @@ export interface AppContextType {
   openContactAgentModal: (property: Property) => void;
   closeContactAgentModal: () => void;
 
-  // Toast notifications
+  // Toast Notifications
   toasts: Toast[];
   showToast: (text: string, type?: 'success' | 'info' | 'error') => void;
   dismissToast: (id: string) => void;
 }
 
-export const DEFAULT_FILTERS: FilterState = {
+const DEFAULT_FILTERS: FilterState = {
   transaction: 'all',
   propertyType: 'all',
   district: 'All Districts',
@@ -181,844 +183,979 @@ export const DEFAULT_FILTERS: FilterState = {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-function extractErrorMessage(err: unknown, fallbackMessage: string): string {
+function extractErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ServiceError) return err.message;
   if (err instanceof Error && err.message) return err.message;
-  return fallbackMessage;
+  return fallback;
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Theme state (UI preference only)
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => mockStorage.getTheme());
+  // Theme state (initialized from system preference)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+      return 'dark';
+    }
+    return 'light';
+  });
 
   useEffect(() => {
-    mockStorage.setTheme(theme);
-    if (typeof document !== 'undefined') {
-      if (theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
     }
   }, [theme]);
 
-  // Toasts
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  // Navigation State
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    const hash = window.location.hash.replace('#', '');
+    return hash || '/';
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      setCurrentPath(hash || '/');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const navigateTo = useCallback((path: string) => {
+    window.location.hash = path;
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const isStorageConfigured = isSupabaseConfigured();
+  const configurationError = getSupabaseConfigurationError();
+
+  // Centralized Authentication State
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(() =>
+    isStorageConfigured ? 'loading' : 'unauthenticated'
+  );
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Domain Data State (strictly sourced from Supabase — never initialized with fake/mock data)
+  const [isDataLoading, setIsDataLoading] = useState<boolean>(isStorageConfigured);
+  const [isUserDashboardLoading, setIsUserDashboardLoading] = useState<boolean>(false);
+  const [serviceError, setServiceError] = useState<string | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [savedPropertyIds, setSavedPropertyIds] = useState<string[]>([]);
+  const [viewingRequests, setViewingRequests] = useState<ViewingRequest[]>([]);
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+
+  // Auth Modal State & Post-Login Continuation Callback
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMessage, setAuthModalMessage] = useState('');
+  const pendingAuthActionRef = React.useRef<(() => void) | null>(null);
+
+  // Contact Agent Modal State
+  const [contactAgentProperty, setContactAgentProperty] = useState<Property | null>(null);
+
+  // Filters State
+  const [filters, setFiltersState] = useState<FilterState>(DEFAULT_FILTERS);
+
+  // Toasts State
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const showToast = useCallback(
+    (text: string, type: 'success' | 'info' | 'error' = 'info') => {
+      const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      setToasts((prev) => [...prev, { id, text, type }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 4500);
+    },
+    []
+  );
+
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const showToast = useCallback(
-    (text: string, type: 'success' | 'info' | 'error' = 'info') => {
-      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      setToasts((prev) => [...prev.slice(-3), { id, text, type }]);
-      setTimeout(() => {
-        dismissToast(id);
-      }, 4500);
-    },
-    [dismissToast]
-  );
-
-  const toggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark';
-      showToast(`Switched to ${next === 'dark' ? 'Dark' : 'Light'} Mode`, 'info');
-      return next;
-    });
-  };
-
-  // Centralized Authentication State
-  // Starts as 'loading' with currentUser = null (NEVER initialized from localStorage)
-  const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isDataLoading, setIsDataLoading] = useState<boolean>(false);
-  const [serviceError, setServiceError] = useState<string | null>(null);
-
-  const isStorageConfigured = isSupabaseConfigured();
-  const isDemoMode = !isStorageConfigured;
-  const demoUsers = authService.getDemoUsers();
-
   const clearServiceError = useCallback(() => {
     setServiceError(null);
-    setAuthError(null);
   }, []);
 
-  // Domain state
-  const [properties, setProperties] = useState<Property[]>(() => mockStorage.getProperties());
-  const [savedPropertyIds, setSavedPropertyIds] = useState<string[]>([]);
-  const [viewingRequests, setViewingRequests] = useState<ViewingRequest[]>(() =>
-    mockStorage.getViewingRequests()
-  );
-  const [enquiries, setEnquiries] = useState<Enquiry[]>(() => mockStorage.getEnquiries());
-  const [transactions, setTransactions] = useState<TransactionRecord[]>(() =>
-    mockStorage.getTransactions()
+  const openAuthModal = useCallback(
+    (message = 'Create an account or sign in to continue.', onSuccessAction?: () => void) => {
+      setAuthError(null);
+      setAuthModalMessage(message);
+      pendingAuthActionRef.current = onSuccessAction || null;
+      setIsAuthModalOpen(true);
+    },
+    []
   );
 
-  // Restore initial Supabase Auth session and subscribe to auth state changes
-  useEffect(() => {
-    let isMounted = true;
+  const closeAuthModal = useCallback(() => {
+    setIsAuthModalOpen(false);
+    setAuthModalMessage('');
+    setAuthError(null);
+    pendingAuthActionRef.current = null;
+  }, []);
 
-    const initializeAppState = async () => {
-      setAuthStatus('loading');
-      setIsDataLoading(true);
-      try {
-        const [
-          restoredProfile,
-          loadedProps,
-          loadedViewings,
-          loadedEnquiries,
-          loadedTxs
-        ] = await Promise.all([
-          authService.getCurrentProfile(),
-          propertyService.getProperties({ includeUnpublished: true }),
-          viewingService.getViewingRequests(),
-          enquiryService.getEnquiries(),
-          transactionService.getTransactions()
+  const requireAuth = useCallback(
+    (
+      action: () => void,
+      promptMessage = 'Create an account or sign in to continue.'
+    ) => {
+      if (authStatus === 'authenticated' && currentUser) {
+        action();
+        return;
+      }
+      openAuthModal(promptMessage, action);
+    },
+    [authStatus, currentUser, openAuthModal]
+  );
+
+  /**
+   * Loads user-scoped protected data (saved properties, enquiries, viewing requests, transactions)
+   * when an authenticated user is present, or clears user-scoped data on sign-out.
+   */
+  const syncUserScopedData = useCallback(async (user: User | null) => {
+    if (!user || !isSupabaseConfigured()) {
+      setSavedPropertyIds([]);
+      setViewingRequests([]);
+      setEnquiries([]);
+      setTransactions([]);
+      return;
+    }
+
+    setIsUserDashboardLoading(true);
+    try {
+      const [loadedSavedIds, loadedViewings, loadedEnquiries, loadedTransactions] =
+        await Promise.all([
+          savedPropertyService.getSavedPropertyIds(user.id).catch(() => []),
+          viewingService.getViewingRequests(user.id).catch(() => []),
+          enquiryService.getEnquiries(user.id).catch(() => []),
+          transactionService.getTransactions().catch(() => [])
         ]);
 
-        if (!isMounted) return;
+      setSavedPropertyIds(loadedSavedIds);
+      setViewingRequests(loadedViewings);
+      setEnquiries(loadedEnquiries);
+      setTransactions(loadedTransactions);
+    } finally {
+      setIsUserDashboardLoading(false);
+    }
+  }, []);
 
-        setCurrentUser(restoredProfile);
-        setAuthStatus(restoredProfile ? 'authenticated' : 'unauthenticated');
-        setProperties(loadedProps);
-        setViewingRequests(loadedViewings);
-        setEnquiries(loadedEnquiries);
-        setTransactions(loadedTxs);
+  /**
+   * Fetches the property catalogue from Supabase PostgreSQL.
+   */
+  const refreshProperties = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setIsDataLoading(false);
+      return;
+    }
+
+    setIsDataLoading(true);
+    setServiceError(null);
+    try {
+      const loadedProperties = await propertyService.getProperties();
+      setProperties(loadedProperties);
+    } catch (err) {
+      const msg = extractErrorMessage(
+        err,
+        'Unable to load properties. Please refresh the page.'
+      );
+      setServiceError(msg);
+    } finally {
+      setIsDataLoading(false);
+    }
+  }, []);
+
+  // Initial session restoration + real-time auth state listener + initial property fetch
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setAuthStatus('unauthenticated');
+      setIsDataLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const initializeAppAndAuth = async () => {
+      setIsDataLoading(true);
+      setAuthStatus('loading');
+
+      // 1. Load public properties from Supabase in parallel with session restoration
+      const propertiesPromise = propertyService
+        .getProperties()
+        .then((loadedProps) => {
+          if (isMounted) {
+            setProperties(loadedProps);
+            setServiceError(null);
+          }
+        })
+        .catch((err) => {
+          if (isMounted) {
+            setServiceError(
+              extractErrorMessage(
+                err,
+                'Unable to load properties. Please refresh the page.'
+              )
+            );
+          }
+        });
+
+      // 2. Restore authenticated session & profile from Supabase Auth
+      try {
+        const restoredProfile = await authService.getCurrentProfile();
+        if (!isMounted) return;
 
         if (restoredProfile) {
-          const loadedSavedIds = await savedPropertyService.getSavedPropertyIds(
-            restoredProfile.id
-          );
-          if (isMounted) {
-            setSavedPropertyIds(loadedSavedIds);
-          }
+          setCurrentUser(restoredProfile);
+          setAuthStatus('authenticated');
+          await syncUserScopedData(restoredProfile);
         } else {
-          setSavedPropertyIds([]);
+          setCurrentUser(null);
+          setAuthStatus('unauthenticated');
+          await syncUserScopedData(null);
         }
-      } catch (err) {
-        if (!isMounted) return;
-        setCurrentUser(null);
-        setAuthStatus('unauthenticated');
-        const msg = extractErrorMessage(err, 'Failed to initialize application data.');
-        setServiceError(msg);
+      } catch {
+        if (isMounted) {
+          setCurrentUser(null);
+          setAuthStatus('unauthenticated');
+        }
       } finally {
+        await propertiesPromise;
         if (isMounted) {
           setIsDataLoading(false);
         }
       }
     };
 
-    void initializeAppState();
+    void initializeAppAndAuth();
 
-    // Subscribe to Supabase Auth state transitions (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED)
-    const unsubscribeAuth = authService.onAuthStateChange((event, profile) => {
+    // 3. Subscribe to Supabase Auth state changes
+    const unsubscribe = authService.onAuthStateChange((event, user) => {
       if (!isMounted) return;
-      if (profile) {
-        setCurrentUser(profile);
-        setAuthStatus('authenticated');
-        void savedPropertyService
-          .getSavedPropertyIds(profile.id)
-          .then((ids) => {
-            if (isMounted) setSavedPropertyIds(ids);
-          })
-          .catch(() => {});
-      } else if (event === 'SIGNED_OUT') {
+
+      if (event === 'SIGNED_OUT' || !user) {
         setCurrentUser(null);
         setAuthStatus('unauthenticated');
-        setSavedPropertyIds([]);
+        void syncUserScopedData(null);
+        return;
+      }
+
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'USER_UPDATED' ||
+        event === 'INITIAL_SESSION'
+      ) {
+        setCurrentUser(user);
+        setAuthStatus('authenticated');
+        void syncUserScopedData(user);
+        void propertyService
+          .getProperties()
+          .then((loaded) => {
+            if (isMounted) setProperties(loaded);
+          })
+          .catch(() => {});
       }
     });
 
     return () => {
       isMounted = false;
-      unsubscribeAuth();
+      unsubscribe();
     };
-  }, []);
+  }, [syncUserScopedData]);
 
-  // Auth modal
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalMessage, setAuthModalMessage] = useState(
-    'Create a free account or sign in to contact this property representative and request a viewing.'
-  );
-  const [pendingAuthAction, setPendingAuthAction] = useState<(() => void) | null>(null);
-
-  // Path routing
-  const [currentPath, setCurrentPath] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return window.location.pathname || '/';
-    }
-    return '/';
-  });
-
-  useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname || '/');
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const navigateTo = (path: string) => {
-    if (path !== currentPath) {
-      window.history.pushState({}, '', path);
-      setCurrentPath(path);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  // Auth Modal triggers
-  const openAuthModal = (message?: string, onSuccessAction?: () => void) => {
-    setAuthError(null);
-    if (message) setAuthModalMessage(message);
-    if (onSuccessAction) setPendingAuthAction(() => onSuccessAction);
-    setIsAuthModalOpen(true);
-  };
-
-  const closeAuthModal = () => {
-    setIsAuthModalOpen(false);
-    setAuthError(null);
-    setPendingAuthAction(null);
-  };
-
-  const requireAuth = (action: () => void, promptMessage?: string) => {
-    if (currentUser) {
-      action();
-    } else {
-      openAuthModal(
-        promptMessage || 'Please sign in to your Reality Estates account to continue.',
-        action
-      );
-    }
-  };
-
-  // Property Lookup Helpers
+  // Property Lookups & Mutations
   const getPropertyById = useCallback(
     (id: string) => properties.find((p) => p.id === id),
     [properties]
   );
 
   const getPropertyBySlug = useCallback(
-    (slug: string) => properties.find((p) => p.slug === slug || p.id === slug),
+    (slug: string) => properties.find((p) => p.slug === slug),
     [properties]
   );
 
-  // Protected Action: Saved Properties
-  const performToggleSaveProperty = async (propertyId: string, userId: string) => {
-    try {
-      const { savedIds, isSaved } = await savedPropertyService.toggleSavedProperty(
-        propertyId,
-        userId
-      );
-      setSavedPropertyIds(savedIds);
-      if (isSaved) {
-        showToast('Property added to saved listings', 'success');
-      } else {
-        showToast('Property removed from saved listings', 'info');
+  const toggleSaveProperty = useCallback(
+    async (propertyId: string) => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.', () => {
+          void toggleSaveProperty(propertyId);
+        });
+        return;
       }
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not update saved properties.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-    }
-  };
 
-  const toggleSaveProperty = async (propertyId: string) => {
-    if (!currentUser) {
-      openAuthModal('Sign in to save properties to your personal shortlist.');
-      return;
-    }
-    await performToggleSaveProperty(propertyId, currentUser.id);
-  };
-
-  const clearSavedProperties = async () => {
-    if (!currentUser) {
-      openAuthModal('Sign in to manage your saved properties.');
-      return;
-    }
-    try {
-      const cleared = await savedPropertyService.clearSavedProperties(currentUser.id);
-      setSavedPropertyIds(cleared);
-      showToast('All saved properties cleared', 'info');
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not clear saved properties.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-    }
-  };
-
-  const isPropertySaved = (propertyId: string) =>
-    Boolean(currentUser) && savedPropertyIds.includes(propertyId);
-
-  // Protected Action: Viewing Requests
-  const addViewingRequest = async (
-    req: CreateViewingRequestInput
-  ): Promise<ViewingRequest> => {
-    if (!currentUser) {
-      openAuthModal('Sign in to schedule an on-site or virtual property viewing.');
-      throw new ServiceError(
-        'Please sign in to schedule a property viewing.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const created = await viewingService.createViewingRequest(req);
-      setViewingRequests((prev) => [created, ...prev]);
-      showToast(
-        'Viewing request submitted successfully! Representative notified.',
-        'success'
-      );
-      return created;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not submit viewing request.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const updateViewingStatus = async (
-    requestId: string,
-    status: ViewingRequest['status']
-  ): Promise<ViewingRequest> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Please sign in to update viewing status.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await viewingService.updateViewingRequestStatus({
-        requestId,
-        status
-      });
-      setViewingRequests((prev) => prev.map((v) => (v.id === requestId ? updated : v)));
-      showToast(`Viewing request status updated to: ${status}`, 'info');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not update viewing status.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const cancelViewingRequest = async (requestId: string): Promise<ViewingRequest> => {
-    return updateViewingStatus(requestId, 'Cancelled');
-  };
-
-  // Protected Action: Enquiries
-  const addEnquiry = async (enq: CreateEnquiryInput): Promise<Enquiry> => {
-    if (!currentUser) {
-      openAuthModal(
-        'Sign in to send an enquiry and connect directly with the property representative.'
-      );
-      throw new ServiceError(
-        'Please sign in to submit an enquiry.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const created = await enquiryService.createEnquiry(enq);
-      setEnquiries((prev) => [created, ...prev]);
-      showToast('Enquiry sent directly to property representative.', 'success');
-      return created;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not send enquiry.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const updateEnquiryStatus = async (
-    enquiryId: string,
-    status: Enquiry['status'],
-    notes?: string
-  ): Promise<Enquiry> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Please sign in to update enquiry status.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await enquiryService.updateEnquiryStatus({
-        enquiryId,
-        status,
-        notes
-      });
-      setEnquiries((prev) => prev.map((e) => (e.id === enquiryId ? updated : e)));
-      showToast(`Enquiry updated to: ${status}`, 'info');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not update enquiry status.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  // Protected Action: Transactions
-  const updateTransactionStage = async (
-    txId: string,
-    stage: TransactionRecord['stage']
-  ): Promise<TransactionRecord> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Authentication is required to manage transactions.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await transactionService.updateTransactionStage({
-        transactionId: txId,
-        stage
-      });
-      setTransactions((prev) => prev.map((t) => (t.id === txId ? updated : t)));
-      showToast(`Transaction advanced to: ${stage}`, 'success');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not update transaction stage.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  // Protected Action: Advertiser Property Management & Admin Verification
-  const createProperty = async (input: CreatePropertyInput): Promise<Property> => {
-    if (!currentUser) {
-      openAuthModal('Sign in to list and manage properties on Reality Estates.');
-      throw new ServiceError(
-        'Please sign in before creating a property listing.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const newProperty = await propertyService.createProperty(input, currentUser);
-      setProperties((prev) => [
-        newProperty,
-        ...prev.filter((p) => p.id !== newProperty.id)
-      ]);
-      if (newProperty.listingStatus === 'draft') {
-        showToast('Draft listing saved! You can submit it for verification when ready.', 'info');
-      } else {
+      try {
+        const result = await savedPropertyService.toggleSavedProperty(
+          propertyId,
+          currentUser.id
+        );
+        setSavedPropertyIds(result.savedIds);
         showToast(
-          'Listing submitted! Sent to verification queue for on-site inspection.',
-          'success'
+          result.isSaved
+            ? 'Property saved to your shortlist'
+            : 'Property removed from saved list',
+          result.isSaved ? 'success' : 'info'
+        );
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to update saved properties.');
+        showToast(msg, 'error');
+      }
+    },
+    [authStatus, currentUser, openAuthModal, showToast]
+  );
+
+  const clearSavedProperties = useCallback(async () => {
+    if (authStatus !== 'authenticated' || !currentUser) {
+      openAuthModal('Create an account or sign in to continue.');
+      return;
+    }
+
+    try {
+      const next = await savedPropertyService.clearSavedProperties(currentUser.id);
+      setSavedPropertyIds(next);
+      showToast('Cleared all saved properties', 'info');
+    } catch (err) {
+      const msg = extractErrorMessage(err, 'Unable to clear saved properties.');
+      showToast(msg, 'error');
+    }
+  }, [authStatus, currentUser, openAuthModal, showToast]);
+
+  const isPropertySaved = useCallback(
+    (propertyId: string) => savedPropertyIds.includes(propertyId),
+    [savedPropertyIds]
+  );
+
+  const createProperty = useCallback(
+    async (input: CreatePropertyInput): Promise<Property> => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.');
+        throw new ServiceError(
+          'Please sign in to continue.',
+          'UNAUTHORIZED',
+          401
         );
       }
-      return newProperty;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Failed to create property listing.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
 
-  const updateProperty = async (
-    id: string,
-    input: UpdatePropertyInput
-  ): Promise<Property> => {
-    if (!currentUser) {
-      openAuthModal('Sign in to edit your property listing.');
-      throw new ServiceError(
-        'Please sign in before editing a property listing.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await propertyService.updateProperty(id, input);
-      setProperties((prev) => prev.map((p) => (p.id === id ? updated : p)));
-      showToast('Property listing updated successfully.', 'success');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Failed to update property listing.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const addProperty = async (newPropData: Partial<Property>): Promise<Property> => {
-    const requestedListingStatus: 'draft' | 'pending' =
-      newPropData.listingStatus === 'draft' ? 'draft' : 'pending';
-
-    return createProperty({
-      title: newPropData.title || 'Newly Listed Ugandan Property',
-      transaction: newPropData.transaction || 'buy',
-      propertyType: newPropData.propertyType || 'House',
-      price: newPropData.price || 500000000,
-      currency: newPropData.currency || 'UGX',
-      pricePeriod: newPropData.pricePeriod,
-      location: newPropData.location || 'Kira',
-      district: newPropData.district || 'Wakiso',
-      address: newPropData.address,
-      bedrooms: newPropData.bedrooms,
-      bathrooms: newPropData.bathrooms,
-      parking: newPropData.parking,
-      landSizeDecimals: newPropData.landSizeDecimals,
-      buildingSizeSqm: newPropData.buildingSizeSqm,
-      tenure: newPropData.tenure,
-      furnished: newPropData.furnished,
-      description: newPropData.description,
-      features: newPropData.features,
-      images: newPropData.images,
-      propertyImages: newPropData.propertyImages,
-      floorPlanUrl: newPropData.floorPlanUrl,
-      videoUrl: newPropData.videoUrl,
-      coordinates: newPropData.coordinates,
-      advertiser: newPropData.advertiser,
-      listingStatus: requestedListingStatus,
-      neighborhoodHighlights: newPropData.neighborhoodHighlights
-    });
-  };
-
-  const submitPropertyForVerification = async (propertyId: string): Promise<Property> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Please sign in to submit a property for verification.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await propertyService.submitPropertyForVerification(propertyId);
-      setProperties((prev) => prev.map((p) => (p.id === propertyId ? updated : p)));
-      showToast('Draft submitted to the Pearl Prime verification queue.', 'success');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not submit property for verification.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const updatePropertyVerification = async (
-    propertyId: string,
-    status: Property['verificationStatus'],
-    notes?: string,
-    checklist?: VerificationChecklistUpdate
-  ): Promise<Property> => {
-    if (!currentUser || currentUser.role !== 'admin') {
-      throw new ServiceError(
-        'Only authorized administrators can update property verification status.',
-        'FORBIDDEN',
-        403
-      );
-    }
-    try {
-      setServiceError(null);
-      const checklistPayload:
-        | Partial<
-            Pick<
-              PropertyVerificationDetails,
-              'advertiserVerified' | 'locationConfirmed' | 'priceConfirmed' | 'availabilityConfirmed'
-            >
-          >
-        | undefined = checklist
-        ? {
-            advertiserVerified: checklist.advertiserVerified,
-            locationConfirmed: checklist.locationConfirmed,
-            priceConfirmed: checklist.priceConfirmed,
-            availabilityConfirmed: checklist.availabilityConfirmed
-          }
-        : undefined;
-
-      const updated = await propertyService.updatePropertyVerification({
-        propertyId,
-        status,
-        notes,
-        checklist: checklistPayload,
-        publishListing: checklist?.publishListing
-      });
-      setProperties((prev) => prev.map((p) => (p.id === propertyId ? updated : p)));
-      showToast(`Property verification status updated to: ${status}`, 'success');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not update property verification.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  // Property Image Service Actions
-  const validatePropertyImageFile = (file: File): void => {
-    propertyService.validatePropertyImageFile(file);
-  };
-
-  const uploadPropertyImages = async (
-    propertyId: string,
-    files: File[],
-    startOrder?: number,
-    onFileProgress?: (fileIndex: number, progressPercent: number) => void
-  ): Promise<PersistedPropertyImage[]> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Please sign in before uploading property images.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const uploaded = await propertyService.uploadPropertyImages(
-        propertyId,
-        files,
-        startOrder,
-        onFileProgress
-      );
-      const refreshed = await propertyService.getPropertyById(propertyId);
-      if (refreshed) {
-        setProperties((prev) => prev.map((p) => (p.id === propertyId ? refreshed : p)));
+      try {
+        setServiceError(null);
+        const created = await propertyService.createProperty(input, currentUser);
+        setProperties((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
+        return created;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to save this property. Please try again.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
       }
-      return uploaded;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not upload property image(s).');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
+    },
+    [authStatus, currentUser, openAuthModal, showToast]
+  );
 
-  const removePropertyImage = async (
-    propertyId: string,
-    image: Pick<PersistedPropertyImage, 'id' | 'storagePath' | 'url'>
-  ): Promise<Property> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Please sign in before removing property images.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await propertyService.removePropertyImage(propertyId, image);
-      setProperties((prev) => prev.map((p) => (p.id === propertyId ? updated : p)));
-      showToast('Property photograph removed.', 'info');
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not remove property photograph.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const reorderPropertyImages = async (
-    propertyId: string,
-    orderedImages: PersistedPropertyImage[]
-  ): Promise<Property> => {
-    if (!currentUser) {
-      throw new ServiceError(
-        'Please sign in before reordering property images.',
-        'UNAUTHORIZED',
-        401
-      );
-    }
-    try {
-      setServiceError(null);
-      const updated = await propertyService.reorderPropertyImages(propertyId, orderedImages);
-      setProperties((prev) => prev.map((p) => (p.id === propertyId ? updated : p)));
-      return updated;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not update photograph ordering.');
-      setServiceError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  // Filters state
-  const [filters, setFiltersState] = useState<FilterState>(DEFAULT_FILTERS);
-  const setFilters = (newFilters: Partial<FilterState>) => {
-    setFiltersState((prev) => ({ ...prev, ...newFilters }));
-  };
-  const resetFilters = () => {
-    setFiltersState(DEFAULT_FILTERS);
-    showToast('Search filters reset', 'info');
-  };
-
-  const completeAuthTransition = (user: User, toastText: string) => {
-    setCurrentUser(user);
-    setAuthStatus('authenticated');
-    setAuthError(null);
-    setIsAuthModalOpen(false);
-    showToast(toastText, 'success');
-
-    void savedPropertyService
-      .getSavedPropertyIds(user.id)
-      .then((ids) => setSavedPropertyIds(ids))
-      .catch(() => {});
-
-    if (pendingAuthAction) {
-      const actionToRun = pendingAuthAction;
-      setPendingAuthAction(null);
-      actionToRun();
-    }
-  };
-
-  const login = async (input: LoginInput): Promise<User> => {
-    setAuthError(null);
-    try {
-      const session = await authService.signIn(input);
-      completeAuthTransition(
-        session.user,
-        `Signed in as ${session.user.name} (${session.user.role.toUpperCase()})`
-      );
-      return session.user;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Unable to sign in.');
-      setAuthError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const loginAs = async (user: User): Promise<void> => {
-    setAuthError(null);
-    try {
-      const session = await authService.loginAsDemoUser(user);
-      completeAuthTransition(
-        session.user,
-        `Demo Mode: Signed in as ${session.user.name} (${session.user.role.toUpperCase()})`
-      );
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Unable to switch demo profile.');
-      setAuthError(msg);
-      showToast(msg, 'error');
-    }
-  };
-
-  const registerUser = async (
-    name: string,
-    phone: string,
-    email: string,
-    role: User['role'] = 'buyer',
-    password?: string
-  ): Promise<AuthSessionResponse> => {
-    setAuthError(null);
-    try {
-      if (role === 'admin') {
+  const updateProperty = useCallback(
+    async (id: string, input: UpdatePropertyInput): Promise<Property> => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.');
         throw new ServiceError(
-          'Administrator accounts cannot be created through public registration.',
+          'Please sign in to continue.',
+          'UNAUTHORIZED',
+          401
+        );
+      }
+
+      try {
+        setServiceError(null);
+        const updated = await propertyService.updateProperty(id, input);
+        setProperties((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
+        );
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to save this property. Please try again.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [authStatus, currentUser, openAuthModal, showToast]
+  );
+
+  const validatePropertyImageFile = useCallback((file: File): void => {
+    propertyService.validatePropertyImageFile(file);
+  }, []);
+
+  const uploadPropertyImages = useCallback(
+    async (
+      propertyId: string,
+      files: File[],
+      startOrder?: number,
+      onFileProgress?: (fileIndex: number, progressPercent: number) => void
+    ): Promise<PersistedPropertyImage[]> => {
+      try {
+        setServiceError(null);
+        const uploadedRecords = await propertyService.uploadPropertyImages(
+          propertyId,
+          files,
+          startOrder,
+          onFileProgress
+        );
+        const refreshedProperty = await propertyService.getPropertyById(propertyId);
+        if (refreshedProperty) {
+          setProperties((prev) =>
+            prev.some((p) => p.id === propertyId)
+              ? prev.map((p) => (p.id === propertyId ? refreshedProperty : p))
+              : [refreshedProperty, ...prev]
+          );
+        }
+        return uploadedRecords;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to upload property images. Please try again.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const removePropertyImage = useCallback(
+    async (
+      propertyId: string,
+      image: Pick<PersistedPropertyImage, 'id' | 'storagePath' | 'url'>
+    ): Promise<Property> => {
+      try {
+        setServiceError(null);
+        const updated = await propertyService.removePropertyImage(propertyId, image);
+        setProperties((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
+        );
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to remove the property image. Please try again.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const reorderPropertyImages = useCallback(
+    async (
+      propertyId: string,
+      orderedImages: PersistedPropertyImage[]
+    ): Promise<Property> => {
+      try {
+        setServiceError(null);
+        const updated = await propertyService.reorderPropertyImages(
+          propertyId,
+          orderedImages
+        );
+        setProperties((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
+        );
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to reorder property images. Please try again.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const addProperty = useCallback(
+    async (newProp: Partial<Property>): Promise<Property> => {
+      const input: CreatePropertyInput = {
+        title: newProp.title || 'Untitled Property',
+        transaction: newProp.transaction || 'buy',
+        propertyType: newProp.propertyType || 'House',
+        price: Number(newProp.price) || 0,
+        currency: newProp.currency || 'UGX',
+        pricePeriod: newProp.pricePeriod,
+        location: newProp.location || 'Kampala',
+        district: newProp.district || 'Kampala',
+        address:
+          newProp.address ||
+          `${newProp.location || 'Kampala'}, ${newProp.district || 'Kampala'}`,
+        bedrooms: newProp.bedrooms ?? 0,
+        bathrooms: newProp.bathrooms ?? 0,
+        parking: newProp.parking ?? 0,
+        landSizeDecimals: newProp.landSizeDecimals,
+        buildingSizeSqm: newProp.buildingSizeSqm,
+        tenure: newProp.tenure,
+        furnished: newProp.furnished,
+        description: newProp.description || '',
+        features: newProp.features || [],
+        images: newProp.images || [],
+        floorPlanUrl: newProp.floorPlanUrl,
+        videoUrl: newProp.videoUrl,
+        coordinates: newProp.coordinates || { lat: 0.3136, lng: 32.5811 },
+        neighborhoodHighlights: newProp.neighborhoodHighlights,
+        listingStatus: newProp.listingStatus === 'draft' ? 'draft' : 'pending',
+        advertiser: {
+          name:
+            newProp.advertiser?.name ||
+            currentUser?.name ||
+            'Property Representative',
+          type: newProp.advertiser?.type || 'Owner',
+          phone:
+            newProp.advertiser?.phone || currentUser?.phone || '',
+          whatsapp:
+            newProp.advertiser?.whatsapp ||
+            newProp.advertiser?.phone ||
+            currentUser?.phone ||
+            '',
+          email:
+            newProp.advertiser?.email || currentUser?.email || '',
+          agencyName: newProp.advertiser?.agencyName || currentUser?.company
+        }
+      };
+
+      return createProperty(input);
+    },
+    [createProperty, currentUser]
+  );
+
+  const submitPropertyForVerification = useCallback(
+    async (propertyId: string): Promise<Property> => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.');
+        throw new ServiceError(
+          'Please sign in to continue.',
+          'UNAUTHORIZED',
+          401
+        );
+      }
+
+      try {
+        setServiceError(null);
+        const updated = await propertyService.submitPropertyForVerification(
+          propertyId
+        );
+        setProperties((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
+        );
+        showToast(
+          'Listing submitted to Reality Estates Verification Desk for review.',
+          'success'
+        );
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to submit listing for verification.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [authStatus, currentUser, openAuthModal, showToast]
+  );
+
+  const updatePropertyVerification = useCallback(
+    async (
+      propertyId: string,
+      status: Property['verificationStatus'],
+      notes?: string,
+      checklist?: VerificationChecklistUpdate
+    ): Promise<Property> => {
+      if (
+        authStatus !== 'authenticated' ||
+        !currentUser ||
+        currentUser.role !== 'admin'
+      ) {
+        throw new ServiceError(
+          'Only authorized Admin accounts can modify property verification status.',
           'FORBIDDEN',
           403
         );
       }
 
-      const publicRole: PublicRegistrableRole = role;
-      const session = await authService.signUp({
-        name,
-        phone,
-        email,
-        role: publicRole,
-        password
-      });
-
-      if (session.requiresEmailConfirmation) {
-        setAuthStatus('unauthenticated');
-        setCurrentUser(null);
-        showToast(
-          'Account created! Please check your email inbox to confirm your address before signing in.',
-          'info'
+      try {
+        setServiceError(null);
+        const updated = await propertyService.updatePropertyVerification({
+          propertyId,
+          verificationStatus: status,
+          notes,
+          advertiserVerified: checklist?.advertiserVerified,
+          locationConfirmed: checklist?.locationConfirmed,
+          priceConfirmed: checklist?.priceConfirmed,
+          availabilityConfirmed: checklist?.availabilityConfirmed,
+          publishListing: checklist?.publishListing
+        });
+        setProperties((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
         );
-        return session;
+        showToast(`Property verification status updated to ${status}`, 'success');
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to update property verification.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [authStatus, currentUser, showToast]
+  );
+
+  // Viewing Requests
+  const addViewingRequest = useCallback(
+    async (req: CreateViewingRequestInput): Promise<ViewingRequest> => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.');
+        throw new ServiceError(
+          'Create an account or sign in to continue.',
+          'UNAUTHORIZED',
+          401
+        );
       }
 
-      completeAuthTransition(
-        session.user,
-        `Account created! Signed in as ${session.user.name} (${session.user.role.toUpperCase()})`
-      );
-      return session;
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Registration failed.');
-      setAuthError(msg);
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
+      try {
+        setServiceError(null);
+        const created = await viewingService.createViewingRequest(req);
+        setViewingRequests((prev) => [created, ...prev]);
+        showToast(
+          'Viewing request submitted. The property representative will confirm shortly.',
+          'success'
+        );
+        return created;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to submit viewing request.');
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [authStatus, currentUser, openAuthModal, showToast]
+  );
 
-  const requestPasswordReset = async (email: string): Promise<void> => {
-    setAuthError(null);
+  const updateViewingStatus = useCallback(
+    async (
+      requestId: string,
+      status: ViewingRequest['status']
+    ): Promise<ViewingRequest> => {
+      try {
+        setServiceError(null);
+        const updated = await viewingService.updateViewingRequestStatus({
+          requestId,
+          status
+        });
+        setViewingRequests((prev) =>
+          prev.map((v) => (v.id === updated.id ? updated : v))
+        );
+        showToast(`Viewing status updated to ${status}`, 'info');
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to update viewing status.');
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const cancelViewingRequest = useCallback(
+    async (requestId: string): Promise<ViewingRequest> => {
+      return updateViewingStatus(requestId, 'Cancelled');
+    },
+    [updateViewingStatus]
+  );
+
+  // Enquiries
+  const addEnquiry = useCallback(
+    async (enq: CreateEnquiryInput): Promise<Enquiry> => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.');
+        throw new ServiceError(
+          'Create an account or sign in to continue.',
+          'UNAUTHORIZED',
+          401
+        );
+      }
+
+      try {
+        setServiceError(null);
+        const created = await enquiryService.createEnquiry(enq);
+        setEnquiries((prev) => [created, ...prev]);
+        showToast(
+          'Enquiry sent directly to the property representative!',
+          'success'
+        );
+        return created;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to send enquiry.');
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [authStatus, currentUser, openAuthModal, showToast]
+  );
+
+  const updateEnquiryStatus = useCallback(
+    async (
+      enquiryId: string,
+      status: Enquiry['status'],
+      notes?: string
+    ): Promise<Enquiry> => {
+      try {
+        setServiceError(null);
+        const updated = await enquiryService.updateEnquiryStatus({
+          enquiryId,
+          status,
+          notes
+        });
+        setEnquiries((prev) =>
+          prev.map((e) => (e.id === updated.id ? updated : e))
+        );
+        showToast(`Enquiry marked as ${status}`, 'info');
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to update enquiry status.');
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  // Transactions
+  const updateTransactionStage = useCallback(
+    async (
+      txId: string,
+      stage: TransactionRecord['stage']
+    ): Promise<TransactionRecord> => {
+      try {
+        setServiceError(null);
+        const updated = await transactionService.updateTransactionStage({
+          transactionId: txId,
+          stage
+        });
+        setTransactions((prev) =>
+          prev.map((t) => (t.id === updated.id ? updated : t))
+        );
+        showToast(`Transaction moved to ${stage} stage`, 'success');
+        return updated;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to update transaction stage.');
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  // Filters
+  const setFilters = useCallback((newFilters: Partial<FilterState>) => {
+    setFiltersState((prev) => ({ ...prev, ...newFilters }));
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setFiltersState(DEFAULT_FILTERS);
+  }, []);
+
+  // Contact Agent Modal (Protected Action)
+  const openContactAgentModal = useCallback(
+    (property: Property) => {
+      if (authStatus !== 'authenticated' || !currentUser) {
+        openAuthModal('Create an account or sign in to continue.', () => {
+          setContactAgentProperty(property);
+        });
+        return;
+      }
+      setContactAgentProperty(property);
+    },
+    [authStatus, currentUser, openAuthModal]
+  );
+
+  const closeContactAgentModal = useCallback(() => {
+    setContactAgentProperty(null);
+  }, []);
+
+  // Authentication Actions
+  const refreshCurrentUser = useCallback(async (): Promise<User | null> => {
     try {
-      await authService.requestPasswordReset(email);
-      showToast(
-        'Password reset instructions have been sent to your email address.',
-        'success'
-      );
-    } catch (err) {
-      const msg = extractErrorMessage(err, 'Could not send password reset email.');
-      setAuthError(msg);
-      showToast(msg, 'error');
-      throw err;
+      const profile = await authService.getCurrentProfile();
+      if (profile) {
+        setCurrentUser(profile);
+        setAuthStatus('authenticated');
+        await syncUserScopedData(profile);
+      } else {
+        setCurrentUser(null);
+        setAuthStatus('unauthenticated');
+        await syncUserScopedData(null);
+      }
+      return profile;
+    } catch {
+      return null;
     }
-  };
+  }, [syncUserScopedData]);
 
-  const logout = async (): Promise<void> => {
+  const login = useCallback(
+    async (input: LoginInput): Promise<User> => {
+      try {
+        setAuthError(null);
+        setServiceError(null);
+        const session = await authService.signIn(input);
+        setCurrentUser(session.user);
+        setAuthStatus('authenticated');
+        await syncUserScopedData(session.user);
+        showToast(`Welcome back, ${session.user.name}!`, 'success');
+
+        const pendingAction = pendingAuthActionRef.current;
+        pendingAuthActionRef.current = null;
+        if (pendingAction) {
+          setTimeout(() => pendingAction(), 50);
+        }
+
+        return session.user;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to sign in.');
+        setAuthError(msg);
+        setServiceError(msg);
+        throw err;
+      }
+    },
+    [showToast, syncUserScopedData]
+  );
+
+  const registerUser = useCallback(
+    async (
+      name: string,
+      phone: string,
+      email: string,
+      role: User['role'] = 'buyer',
+      password?: string
+    ): Promise<AuthSessionResponse> => {
+      if (role === 'admin') {
+        const forbiddenMsg =
+          'Public registration cannot create an Admin account. Please select Buyer, Owner, Agent, or Developer.';
+        setAuthError(forbiddenMsg);
+        showToast(forbiddenMsg, 'error');
+        throw new ServiceError(forbiddenMsg, 'FORBIDDEN', 403);
+      }
+
+      const publicRole: PublicRegistrableRole = role;
+
+      try {
+        setAuthError(null);
+        setServiceError(null);
+        const session = await authService.signUp({
+          name,
+          phone,
+          email,
+          role: publicRole,
+          password
+        });
+
+        if (session.requiresEmailConfirmation) {
+          showToast(
+            `Account created for ${email}. Please check your email inbox to confirm your address before signing in.`,
+            'info'
+          );
+          return session;
+        }
+
+        setCurrentUser(session.user);
+        setAuthStatus('authenticated');
+        await syncUserScopedData(session.user);
+        showToast(
+          `Welcome to Reality Estates, ${session.user.name}!`,
+          'success'
+        );
+
+        const pendingAction = pendingAuthActionRef.current;
+        pendingAuthActionRef.current = null;
+        if (pendingAction) {
+          setTimeout(() => pendingAction(), 50);
+        }
+
+        return session;
+      } catch (err) {
+        const msg = extractErrorMessage(err, 'Unable to register account.');
+        setAuthError(msg);
+        setServiceError(msg);
+        throw err;
+      }
+    },
+    [showToast, syncUserScopedData]
+  );
+
+  const requestPasswordReset = useCallback(
+    async (email: string): Promise<void> => {
+      try {
+        setAuthError(null);
+        await authService.requestPasswordReset(email);
+        showToast(
+          `Password reset instructions have been sent to ${email}.`,
+          'success'
+        );
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to send password reset instructions.'
+        );
+        setAuthError(msg);
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const logout = useCallback(async () => {
     try {
       await authService.signOut();
       setCurrentUser(null);
       setAuthStatus('unauthenticated');
-      setSavedPropertyIds([]);
-      setAuthError(null);
-      showToast('You have signed out', 'info');
-      navigateTo('/');
+      await syncUserScopedData(null);
+      showToast('You have signed out of your account.', 'info');
+      if (
+        currentPath === '/admin' ||
+        currentPath === '/dashboard' ||
+        currentPath === '/list-property' ||
+        currentPath.startsWith('/edit-property/')
+      ) {
+        navigateTo('/');
+      }
     } catch (err) {
-      const msg = extractErrorMessage(err, 'Failed to sign out.');
+      const msg = extractErrorMessage(err, 'Unable to sign out.');
       showToast(msg, 'error');
     }
-  };
-
-  const refreshCurrentUser = async (): Promise<User | null> => {
-    setAuthStatus('loading');
-    try {
-      const user = await authService.getCurrentProfile();
-      setCurrentUser(user);
-      setAuthStatus(user ? 'authenticated' : 'unauthenticated');
-      return user;
-    } catch {
-      setCurrentUser(null);
-      setAuthStatus('unauthenticated');
-      return null;
-    }
-  };
-
-  // Contact Agent Modal (Protected Action)
-  const [contactAgentProperty, setContactAgentProperty] = useState<Property | null>(null);
-  const openContactAgentModal = (property: Property) => {
-    if (!currentUser) {
-      openAuthModal(
-        'Sign in to contact this property representative and send direct enquiries.',
-        () => setContactAgentProperty(property)
-      );
-      return;
-    }
-    setContactAgentProperty(property);
-  };
-  const closeContactAgentModal = () => {
-    setContactAgentProperty(null);
-  };
+  }, [currentPath, navigateTo, showToast, syncUserScopedData]);
 
   return (
     <AppContext.Provider
@@ -1028,19 +1165,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentProfile: currentUser,
         isAuthenticated: authStatus === 'authenticated' && Boolean(currentUser),
         isAuthLoading: authStatus === 'loading',
-        isDemoMode,
         authError,
-        demoUsers,
         login,
-        loginAs,
         registerUser,
         requestPasswordReset,
         logout,
         refreshCurrentUser,
         isDataLoading,
+        isUserDashboardLoading,
         isStorageConfigured,
+        configurationError,
         serviceError,
         clearServiceError,
+        refreshProperties,
         isAuthModalOpen,
         authModalMessage,
         openAuthModal,
@@ -1091,7 +1228,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 };
 
-export const useApp = () => {
+export const useApp = (): AppContextType => {
   const context = useContext(AppContext);
   if (!context) {
     throw new Error('useApp must be used within an AppProvider');

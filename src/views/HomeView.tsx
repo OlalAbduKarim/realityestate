@@ -4,47 +4,129 @@ import { PropertyType } from '../types/property';
 import { SearchBar } from '../components/SearchBar';
 import { PropertyCard } from '../components/PropertyCard';
 import { InteractiveAreaMap } from '../components/InteractiveAreaMap';
-import { 
-  Building2, 
-  Home, 
-  MapPin, 
-  ShieldCheck, 
-  TrendingUp, 
-  ArrowRight, 
-  CheckCircle2, 
-  Layers, 
+import {
+  Building2,
+  Home,
+  ShieldCheck,
+  TrendingUp,
+  ArrowRight,
+  CheckCircle2,
+  Layers,
   LandPlot,
   Building,
   Briefcase,
   Store,
-  Sparkles
+  Sparkles,
+  Loader2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 export const HomeView: React.FC = () => {
-  const { properties, setFilters, navigateTo } = useApp();
+  const {
+    properties,
+    isDataLoading,
+    serviceError,
+    refreshProperties,
+    setFilters,
+    navigateTo
+  } = useApp();
 
-  const featuredProperties = properties.filter(p => p.featured).slice(0, 4);
-  const verifiedProperties = properties.filter(p => p.verificationStatus === 'verified').slice(0, 3);
-  const recentProperties = [...properties].sort((a, b) => 
-    new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
-  ).slice(0, 6);
+  const publishedProperties = properties.filter((p) => p.listingStatus === 'published');
+  const featuredProperties = (
+    publishedProperties.some((p) => p.featured)
+      ? publishedProperties.filter((p) => p.featured)
+      : publishedProperties
+  ).slice(0, 4);
+  const verifiedProperties = publishedProperties
+    .filter((p) => p.verificationStatus === 'verified')
+    .slice(0, 3);
 
-  const PROPERTY_TYPES: Array<{ name: string; type: PropertyType; icon: React.ElementType; count: number }> = [
-    { name: 'Houses', type: 'House', icon: Home, count: properties.filter(p => p.propertyType === 'House').length },
-    { name: 'Apartments', type: 'Apartment', icon: Building2, count: properties.filter(p => p.propertyType === 'Apartment').length },
-    { name: 'Land', type: 'Land', icon: LandPlot, count: properties.filter(p => p.propertyType === 'Land').length },
-    { name: 'Commercial', type: 'Commercial', icon: Building, count: properties.filter(p => p.propertyType === 'Commercial').length },
-    { name: 'Offices', type: 'Office', icon: Briefcase, count: properties.filter(p => p.propertyType === 'Office').length },
-    { name: 'Shops & Retail', type: 'Shop', icon: Store, count: properties.filter(p => p.propertyType === 'Shop').length },
+  const PROPERTY_TYPES: Array<{
+    name: string;
+    type: PropertyType;
+    icon: React.ElementType;
+    count: number;
+  }> = [
+    {
+      name: 'Houses',
+      type: 'House',
+      icon: Home,
+      count: publishedProperties.filter((p) => p.propertyType === 'House').length
+    },
+    {
+      name: 'Apartments',
+      type: 'Apartment',
+      icon: Building2,
+      count: publishedProperties.filter((p) => p.propertyType === 'Apartment').length
+    },
+    {
+      name: 'Land',
+      type: 'Land',
+      icon: LandPlot,
+      count: publishedProperties.filter((p) => p.propertyType === 'Land').length
+    },
+    {
+      name: 'Commercial',
+      type: 'Commercial',
+      icon: Building,
+      count: publishedProperties.filter((p) => p.propertyType === 'Commercial').length
+    },
+    {
+      name: 'Offices',
+      type: 'Office',
+      icon: Briefcase,
+      count: publishedProperties.filter((p) => p.propertyType === 'Office').length
+    },
+    {
+      name: 'Shops & Retail',
+      type: 'Shop',
+      icon: Store,
+      count: publishedProperties.filter((p) => p.propertyType === 'Shop').length
+    }
   ];
 
   const POPULAR_LOCATIONS = [
-    { name: 'Kololo', district: 'Kampala', count: properties.filter(p => p.location.includes('Kololo')).length, desc: 'Diplomatic hub, luxury villas & upscale apartments' },
-    { name: 'Naguru', district: 'Kampala', count: properties.filter(p => p.location.includes('Naguru')).length, desc: 'Panoramic hilltop views, commercial towers & duplexes' },
-    { name: 'Kira & Najjera', district: 'Wakiso', count: properties.filter(p => p.location.includes('Kira') || p.location.includes('Najjera')).length, desc: 'Rapidly growing family residential belt' },
-    { name: 'Entebbe', district: 'Wakiso', count: properties.filter(p => p.location.includes('Entebbe')).length, desc: 'Lakeside estates, airport corridor & scenic retreats' },
-    { name: 'Lubowa', district: 'Wakiso', count: properties.filter(p => p.location.includes('Lubowa')).length, desc: 'Entebbe road corridor, gated communities & schools' },
-    { name: 'Jinja & Mukono', district: 'Central / East', count: properties.filter(p => p.location.includes('Mukono') || p.location.includes('Jinja')).length, desc: 'Industrial growth, expansive land & tourism nodes' },
+    {
+      name: 'Kololo',
+      district: 'Kampala',
+      count: publishedProperties.filter((p) => p.location.includes('Kololo')).length,
+      desc: 'Diplomatic hub, luxury villas & upscale apartments'
+    },
+    {
+      name: 'Naguru',
+      district: 'Kampala',
+      count: publishedProperties.filter((p) => p.location.includes('Naguru')).length,
+      desc: 'Panoramic hilltop views, commercial towers & duplexes'
+    },
+    {
+      name: 'Kira & Najjera',
+      district: 'Wakiso',
+      count: publishedProperties.filter(
+        (p) => p.location.includes('Kira') || p.location.includes('Najjera')
+      ).length,
+      desc: 'Rapidly growing family residential belt'
+    },
+    {
+      name: 'Entebbe',
+      district: 'Wakiso',
+      count: publishedProperties.filter((p) => p.location.includes('Entebbe')).length,
+      desc: 'Lakeside estates, airport corridor & scenic retreats'
+    },
+    {
+      name: 'Lubowa',
+      district: 'Wakiso',
+      count: publishedProperties.filter((p) => p.location.includes('Lubowa')).length,
+      desc: 'Entebbe road corridor, gated communities & schools'
+    },
+    {
+      name: 'Jinja & Mukono',
+      district: 'Central / East',
+      count: publishedProperties.filter(
+        (p) => p.location.includes('Mukono') || p.location.includes('Jinja')
+      ).length,
+      desc: 'Industrial growth, expansive land & tourism nodes'
+    }
   ];
 
   const handleTypeClick = (type: PropertyType) => {
@@ -63,7 +145,6 @@ export const HomeView: React.FC = () => {
 
   return (
     <div className="space-y-16 pb-16">
-      
       {/* Hero Section */}
       <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28 border-b border-stone-200 dark:border-stone-800 bg-linear-to-b from-stone-100/60 to-transparent dark:from-stone-900/60 dark:to-transparent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -72,11 +153,11 @@ export const HomeView: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5" />
               <span>Uganda's Transparent Real Estate Marketplace</span>
             </div>
-            
+
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif font-bold text-stone-950 dark:text-white tracking-tight leading-tight">
               Find a place you'll love.
             </h1>
-            
+
             <p className="text-base sm:text-lg text-stone-600 dark:text-stone-300 max-w-2xl mx-auto font-normal">
               Discover verified homes, contemporary apartments, surveyed land parcels, and commercial spaces across Kampala and Uganda.
             </p>
@@ -90,20 +171,36 @@ export const HomeView: React.FC = () => {
           {/* Quick Stats Banner */}
           <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto pt-6 border-t border-stone-200/60 dark:border-stone-800">
             <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-stone-800/40 backdrop-blur-xs border border-stone-200/60 dark:border-stone-800">
-              <div className="text-2xl font-serif font-bold text-stone-900 dark:text-white">{properties.length}+</div>
-              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Active Properties</div>
+              <div className="text-2xl font-serif font-bold text-stone-900 dark:text-white">
+                {publishedProperties.length}
+              </div>
+              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                Published Properties
+              </div>
             </div>
             <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-stone-800/40 backdrop-blur-xs border border-stone-200/60 dark:border-stone-800">
-              <div className="text-2xl font-serif font-bold text-emerald-600 dark:text-emerald-400">100%</div>
-              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Verified Coordinates</div>
+              <div className="text-2xl font-serif font-bold text-emerald-600 dark:text-emerald-400">
+                100%
+              </div>
+              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                Verified Coordinates
+              </div>
             </div>
             <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-stone-800/40 backdrop-blur-xs border border-stone-200/60 dark:border-stone-800">
-              <div className="text-2xl font-serif font-bold text-stone-900 dark:text-white">12+</div>
-              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Districts Covered</div>
+              <div className="text-2xl font-serif font-bold text-stone-900 dark:text-white">
+                133
+              </div>
+              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                Districts Supported
+              </div>
             </div>
             <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-stone-800/40 backdrop-blur-xs border border-stone-200/60 dark:border-stone-800">
-              <div className="text-2xl font-serif font-bold text-stone-900 dark:text-white">Zero</div>
-              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Hidden Buyer Fees</div>
+              <div className="text-2xl font-serif font-bold text-stone-900 dark:text-white">
+                Zero
+              </div>
+              <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                Hidden Buyer Fees
+              </div>
             </div>
           </div>
         </div>
@@ -125,18 +222,60 @@ export const HomeView: React.FC = () => {
           </div>
           <button
             onClick={() => navigateTo('/search')}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors self-start sm:self-auto"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors self-start sm:self-auto cursor-pointer"
           >
             <span>View all listings</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {featuredProperties.map(property => (
-            <PropertyCard key={property.id} property={property} />
-          ))}
-        </div>
+        {isDataLoading ? (
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center">
+            <Loader2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400 animate-spin mx-auto mb-3" />
+            <p className="text-sm font-medium text-stone-600 dark:text-stone-400">
+              Loading properties...
+            </p>
+          </div>
+        ) : serviceError ? (
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 p-10 text-center max-w-xl mx-auto">
+            <AlertCircle className="w-8 h-8 text-rose-600 dark:text-rose-400 mx-auto mb-3" />
+            <h3 className="text-lg font-bold text-stone-900 dark:text-white mb-1">
+              Unable to load properties
+            </h3>
+            <p className="text-sm text-stone-600 dark:text-stone-400 mb-5">
+              {serviceError}
+            </p>
+            <button
+              onClick={() => void refreshProperties()}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Retry Loading
+            </button>
+          </div>
+        ) : featuredProperties.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {featuredProperties.map((property) => (
+              <PropertyCard key={property.id} property={property} />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center">
+            <Building2 className="w-10 h-10 text-stone-400 mx-auto mb-3" />
+            <h3 className="text-lg font-bold text-stone-900 dark:text-white mb-1">
+              No properties are currently available.
+            </h3>
+            <p className="text-sm text-stone-500 dark:text-stone-400 mb-6 max-w-md mx-auto">
+              Published listings will appear here once approved by the Reality Estates verification team.
+            </p>
+            <button
+              onClick={() => navigateTo('/list-property')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            >
+              List a Property
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Explore by Property Type */}
@@ -203,7 +342,7 @@ export const HomeView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {POPULAR_LOCATIONS.map(loc => (
+          {POPULAR_LOCATIONS.map((loc) => (
             <div
               key={loc.name}
               onClick={() => handleLocationClick(loc.name, loc.district)}
@@ -263,11 +402,19 @@ export const HomeView: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {verifiedProperties.map(property => (
-              <PropertyCard key={property.id} property={property} />
-            ))}
-          </div>
+          {verifiedProperties.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {verifiedProperties.map((property) => (
+                <PropertyCard key={property.id} property={property} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-stone-800 bg-stone-900/60 p-8 text-center text-sm text-stone-400">
+              {isDataLoading
+                ? 'Loading verified properties...'
+                : 'No verified properties are currently available.'}
+            </div>
+          )}
         </div>
       </section>
 
@@ -287,7 +434,7 @@ export const HomeView: React.FC = () => {
           </div>
           <button
             onClick={() => navigateTo('/search')}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
           >
             <span>Open search with split map</span>
             <ArrowRight className="w-4 h-4" />
@@ -295,8 +442,8 @@ export const HomeView: React.FC = () => {
         </div>
 
         <div className="h-[460px] rounded-2xl overflow-hidden shadow-sm">
-          <InteractiveAreaMap 
-            properties={properties} 
+          <InteractiveAreaMap
+            properties={publishedProperties}
             onSelectProperty={(p) => navigateTo(`/properties/${p.slug}`)}
           />
         </div>
@@ -397,7 +544,6 @@ export const HomeView: React.FC = () => {
           </div>
         </div>
       </section>
-
     </div>
   );
 };

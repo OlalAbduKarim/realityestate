@@ -12,12 +12,18 @@ import {
   ArrowUpDown,
   LayoutGrid,
   Map as MapIcon,
-  ShieldCheck
+  ShieldCheck,
+  Loader2,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 export const SearchView: React.FC = () => {
   const {
     properties,
+    isDataLoading,
+    serviceError,
+    refreshProperties,
     filters,
     setFilters,
     resetFilters,
@@ -26,12 +32,15 @@ export const SearchView: React.FC = () => {
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
 
+  const publishedProperties = useMemo(
+    () => properties.filter((p) => p.listingStatus === 'published'),
+    [properties]
+  );
+
   // Filter and Sort Properties (only published properties appear in public search)
   const filteredProperties = useMemo(() => {
-    return properties
+    return publishedProperties
       .filter((p) => {
-        if (p.listingStatus !== 'published') return false;
-
         // Transaction Type
         if (filters.transaction !== 'all' && p.transaction !== filters.transaction) {
           return false;
@@ -55,7 +64,9 @@ export const SearchView: React.FC = () => {
           const matchDistrict = p.district.toLowerCase().includes(q);
           const matchAddress = p.address.toLowerCase().includes(q);
           const matchTitle = p.title.toLowerCase().includes(q);
-          if (!matchNeighborhood && !matchDistrict && !matchAddress && !matchTitle) return false;
+          if (!matchNeighborhood && !matchDistrict && !matchAddress && !matchTitle) {
+            return false;
+          }
         }
         // Min Price
         if (filters.minPrice > 0 && p.price < filters.minPrice) {
@@ -97,7 +108,7 @@ export const SearchView: React.FC = () => {
         const scoreB = (b.verificationStatus === 'verified' ? 2 : 0) + (b.featured ? 1 : 0);
         return scoreB - scoreA;
       });
-  }, [properties, filters]);
+  }, [publishedProperties, filters]);
 
   const activeFilterCount = [
     filters.transaction !== 'all',
@@ -137,11 +148,17 @@ export const SearchView: React.FC = () => {
                 : 'in Uganda'}
             </h1>
             <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
-              Showing{' '}
-              <span className="font-semibold text-stone-900 dark:text-white">
-                {filteredProperties.length}
-              </span>{' '}
-              available listings
+              {isDataLoading ? (
+                'Loading properties...'
+              ) : (
+                <>
+                  Showing{' '}
+                  <span className="font-semibold text-stone-900 dark:text-white">
+                    {filteredProperties.length}
+                  </span>{' '}
+                  available listings
+                </>
+              )}
             </p>
           </div>
 
@@ -313,8 +330,32 @@ export const SearchView: React.FC = () => {
           </div>
         )}
 
-        {/* Results Grid or Interactive Map */}
-        {filteredProperties.length > 0 ? (
+        {/* Results Grid, Loading State, Error State, or Empty State */}
+        {isDataLoading ? (
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-16 text-center max-w-lg mx-auto my-12 shadow-sm">
+            <Loader2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400 animate-spin mx-auto mb-3" />
+            <p className="text-sm font-medium text-stone-600 dark:text-stone-400">
+              Loading properties...
+            </p>
+          </div>
+        ) : serviceError ? (
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 p-12 text-center max-w-lg mx-auto my-12 shadow-sm">
+            <AlertCircle className="w-10 h-10 text-rose-600 dark:text-rose-400 mx-auto mb-3" />
+            <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-2">
+              Unable to load properties
+            </h3>
+            <p className="text-stone-500 dark:text-stone-400 mb-6 text-sm leading-relaxed">
+              {serviceError}
+            </p>
+            <button
+              onClick={() => void refreshProperties()}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Retry Loading
+            </button>
+          </div>
+        ) : filteredProperties.length > 0 ? (
           viewMode === 'map' ? (
             <div className="mb-12 h-[540px]">
               <InteractiveAreaMap
@@ -336,18 +377,31 @@ export const SearchView: React.FC = () => {
               <MapPin className="w-8 h-8" />
             </div>
             <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-2">
-              No matching properties found
+              {publishedProperties.length === 0
+                ? 'No properties are currently available.'
+                : 'No matching properties found'}
             </h3>
-            <p className="text-stone-500 dark:text-stone-400 mb-8 leading-relaxed">
-              We couldn't find any properties matching your exact criteria. Try broadening your location search or adjusting your price filters.
+            <p className="text-stone-500 dark:text-stone-400 mb-8 leading-relaxed text-sm">
+              {publishedProperties.length === 0
+                ? 'Check back soon or list your property to publish verified real estate on Reality Estates.'
+                : "We couldn't find any properties matching your exact criteria. Try broadening your location search or adjusting your price filters."}
             </p>
-            <button
-              onClick={resetFilters}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Reset All Filters
-            </button>
+            {activeFilterCount > 0 ? (
+              <button
+                onClick={resetFilters}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reset All Filters
+              </button>
+            ) : (
+              <button
+                onClick={() => navigateTo('/list-property')}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm cursor-pointer"
+              >
+                List a Property
+              </button>
+            )}
           </div>
         )}
       </div>

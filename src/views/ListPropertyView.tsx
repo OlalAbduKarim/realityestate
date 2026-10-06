@@ -29,14 +29,6 @@ import {
 } from 'lucide-react';
 import { UGANDAN_REGIONS, POPULAR_NEIGHBORHOODS } from '../data/ugandaLocations';
 
-const PRESET_IMAGE_OPTIONS = [
-  'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=80'
-];
-
 const AMENITY_OPTIONS = [
   'Parking',
   'Garden',
@@ -154,15 +146,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
         deleteState: 'idle'
       }));
     }
-    return [
-      {
-        id: 'preset-initial-0',
-        propertyId: '',
-        url: PRESET_IMAGE_OPTIONS[0],
-        displayOrder: 0,
-        deleteState: 'idle'
-      }
-    ];
+    return [];
   });
 
   // A. Local Selected Files (temporary object URL previews before upload)
@@ -804,9 +788,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
 
         // 8. If any upload fails, clearly report failure and stay on Step 4 so the user can retry without losing form work
         if (!allSucceeded) {
-          const uploadErrText = isStorageConfigured
-            ? `Property details were saved, but ${failedCount} image upload(s) failed. Please retry the failed upload(s) below or continue without them.`
-            : `Property details were saved in Demo Mode, but ${failedCount} local device file(s) could not be uploaded because Supabase Storage (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY) is not configured. Remove local files or configure Supabase Storage to retry.`;
+          const uploadErrText = `Unable to upload property images (${failedCount} failed). Please try again using the retry button below.`;
           setFormError(uploadErrText);
           setStep(4);
           return;
@@ -1370,7 +1352,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                 </h3>
 
                 <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Upload JPEG, PNG, or WebP photographs (max 5 MB per photo), select curated sample photos, or paste permanent hosted image URLs.
+                  Upload JPEG, PNG, or WebP photographs (max 5 MB per photo) to Supabase Storage, or paste permanent hosted image URLs.
                 </p>
 
                 {/* Device Image Upload (Local Selected Files -> Uploaded after Property ID exists) */}
@@ -1380,9 +1362,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                       Select Local Image Files (JPEG, PNG, WebP • Max 5 MB)
                     </div>
                     <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                      {isStorageConfigured
-                        ? 'Shows an instant preview now and uploads to Supabase Storage (properties/{propertyId}/{uuid}.{ext}) when saved.'
-                        : 'Demo Mode active: Local files show an immediate browser preview. Configure VITE_SUPABASE_URL & VITE_SUPABASE_PUBLISHABLE_KEY for cloud uploads.'}
+                      Shows an instant preview now and uploads to Supabase Storage (properties/&#123;propertyId&#125;/&#123;uuid&#125;.&#123;ext&#125;) when saved.
                     </p>
                   </div>
                   <div>
@@ -1413,32 +1393,6 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                       )}
                     </button>
                   </div>
-                </div>
-
-                {/* Presets Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  {PRESET_IMAGE_OPTIONS.map((img, idx) => {
-                    const isIncluded = persistedImages.some((p) => p.url === img);
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleAddHostedImage(img)}
-                        className={`relative aspect-4/3 rounded-xl overflow-hidden border-2 transition-all ${
-                          isIncluded
-                            ? 'border-emerald-600 ring-2 ring-emerald-500/30'
-                            : 'border-transparent hover:opacity-80'
-                        }`}
-                      >
-                        <img src={img} alt="Preset" className="w-full h-full object-cover" />
-                        {isIncluded && (
-                          <div className="absolute top-1 right-1 bg-emerald-600 text-white rounded-full p-0.5">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
                 </div>
 
                 {/* Custom URL Input */}
@@ -1871,10 +1825,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                 furnished,
                 description: description || 'Property description preview...',
                 features: selectedFeatures,
-                images:
-                  livePreviewDisplayUrls.length > 0
-                    ? livePreviewDisplayUrls
-                    : [PRESET_IMAGE_OPTIONS[0]],
+                images: livePreviewDisplayUrls,
                 coordinates: { lat, lng },
                 advertiser: {
                   id: 'preview-adv',

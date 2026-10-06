@@ -15,7 +15,8 @@ import {
   LogOut,
   ShieldCheck,
   MessageSquare,
-  Send
+  Send,
+  Loader2
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -25,6 +26,8 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({ initialTab = 'saved' }) => {
   const {
     currentUser,
+    isDataLoading,
+    isUserDashboardLoading,
     logout,
     properties,
     savedPropertyIds,
@@ -44,6 +47,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ initialTab = 'save
   const [submittingPropertyId, setSubmittingPropertyId] = useState<string | null>(null);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
 
+  if (isDataLoading || isUserDashboardLoading) {
+    return (
+      <div className="min-h-[70vh] bg-stone-50 dark:bg-stone-950 flex flex-col items-center justify-center p-4 transition-colors duration-200">
+        <Loader2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400 animate-spin mb-3" />
+        <p className="text-sm font-medium text-stone-600 dark:text-stone-400">
+          Loading dashboard...
+        </p>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return (
       <div className="min-h-[70vh] bg-stone-50 dark:bg-stone-950 flex flex-col items-center justify-center p-4 transition-colors duration-200">
@@ -52,13 +66,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ initialTab = 'save
             <Building className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-bold text-stone-900 dark:text-white mb-2">
-            Sign in to your account
+            Create an account or sign in to continue.
           </h2>
           <p className="text-stone-600 dark:text-stone-400 mb-8">
             Access your saved properties, manage viewing requests, and track your listings across Uganda.
           </p>
           <button
-            onClick={() => openAuthModal()}
+            onClick={() => openAuthModal('Create an account or sign in to continue.')}
             className="w-full py-3.5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl font-medium transition-colors"
           >
             Sign In / Create Account
@@ -73,7 +87,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ initialTab = 'save
     (p) =>
       p.advertiser?.id === currentUser.id ||
       p.advertiser?.email === currentUser.email ||
-      (currentUser.role === 'agent' && p.id === 'prop-1') ||
       currentUser.role === 'admin'
   );
 
@@ -379,7 +392,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ initialTab = 'save
                           }}
                           className="flex-1 sm:w-32 py-2 px-3 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 rounded-lg text-xs font-semibold transition-colors text-center"
                         >
-                          Confirm (Demo)
+                          Confirm Viewing
                         </button>
                         <button
                           onClick={() => {

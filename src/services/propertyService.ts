@@ -9,523 +9,632 @@ import {
 } from '../types/api';
 import {
   AdvertiserType,
+  CurrencyCode,
+  LandTenure,
   ListingStatus,
   PersistedPropertyImage,
+  PricePeriod,
   Property,
-  User
+  PropertyAvailability,
+  PropertyType,
+  TransactionType,
+  User,
+  VerificationStatus
 } from '../types/property';
-import { mockStorage } from '../mocks/mockStorage';
-import { slugify } from '../utils/formatters';
-import { generateUuid, isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
-  isBlobUrl,
-  isValidPersistedImageUrl,
+  generateUuid,
+  getRequiredSupabaseClient
+} from '../lib/supabase';
+import {
+  filterPermanentImageUrls,
   mapRowToPersistedImage,
   storageService
 } from './storageService';
 
-function mapUserRoleToAdvertiserType(role?: User['role']): AdvertiserType {
-  if (role === 'agent') return 'Agent';
-  if (role === 'developer') return 'Developer';
-  return 'Owner';
+const PROPERTY_RELATIONAL_SELECT =
+  '*, property_images(*), property_verifications(*), advertiser:profiles!properties_advertiser_id_fkey(*)';
+
+function generateSlug(title: string, location: string): string {
+  const base = `${title}-${location}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const suffix = Math.random().toString(36).substring(2, 7);
+  return `${base || 'uganda-property'}-${suffix}`;
 }
 
-function normalizePropertyImages(property: Property): Property {
-  const safeImages = (property.images || []).filter((url) =>
-    isValidPersistedImageUrl(url)
-  );
+function mapSupabaseError(err: unknown, fallbackMessage: string): ServiceError {
+  if (err instanceof ServiceError) return err;
 
-  if (property.propertyImages && property.propertyImages.length > 0) {
-    const ordered = [...property.propertyImages]
-      .filter((img) => isValidPersistedImageUrl(img.url))
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map((img, idx) => ({
-        ...img,
-        displayOrder: idx
-      }));
+  const rawMsg =
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message?: unknown }).message || '')
+      : err instanceof Error
+      ? err.message
+      : '';
+  const lower = rawMsg.toLowerCase();
 
-    return {
-      ...property,
-      images: ordered.map((img) => img.url),
-      propertyImages: ordered
-    };
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('network request failed') ||
+    lower.includes('load failed')
+  ) {
+    return new ServiceError(
+      'Reality Estates could not connect to the server. Please check your internet connection and try again.',
+      'NETWORK_ERROR',
+      503
+    );
   }
 
-  const synthesized: PersistedPropertyImage[] = safeImages.map((url, idx) => ({
-    id: `${property.id}-img-${idx}`,
-    propertyId: property.id,
-    url,
-    displayOrder: idx
-  }));
+  if (lower.includes('row-level security') || lower.includes('permission denied')) {
+    return new ServiceError(
+      'You do not have permission to perform this action.',
+      'FORBIDDEN',
+      403
+    );
+  }
+
+  return new ServiceError(fallbackMessage, 'UNKNOWN_ERROR', 500);
+}
+
+/**
+ * Maps a Supabase `properties` row (with embedded `property_images`, `property_verifications`,
+ * and `advertiser` profile) into the domain `Property` object.
+ * Never invents fake images or demo fallback fields.
+ */
+function mapSupabaseRowToProperty(row: Record<string, unknown>): Property {
+  const propertyId = String(row.id || '');
+
+  // 1. Map persisted property images ordered by sort_order / display_order
+  const rawImageRows = Array.isArray(row.property_images)
+    ? (row.property_images as PropertyImageRow[])
+    : [];
+
+  const persistedImages: PersistedPropertyImage[] = rawImageRows
+    .map((imgRow) =>
+      mapRowToPersistedImage(imgRow, (p) => storageService.getPropertyImageUrl(p))
+    )
+    .filter((img) => Boolean(img.url))
+    .sort((a, b) => a.displayOrder - b.displayOrder);
+
+  const orderedUrls = filterPermanentImageUrls(persistedImages.map((img) => img.url));
+
+  // 2. Map advertiser profile
+  const rawAdvertiser =
+    row.advertiser && typeof row.advertiser === 'object' && !Array.isArray(row.advertiser)
+      ? (row.advertiser as Record<string, unknown>)
+      : Array.isArray(row.advertiser) && row.advertiser[0]
+      ? (row.advertiser[0] as Record<string, unknown>)
+      : null;
+
+  const advertiserType = ((row.advertiser_type as AdvertiserType) || 'Agent') as AdvertiserType;
+  const advertiserPhone = String(rawAdvertiser?.phone || '');
+
+  const advertiser: Property['advertiser'] = {
+    id: String(rawAdvertiser?.id || row.advertiser_id || ''),
+    name: String(rawAdvertiser?.name || 'Property Representative'),
+    type: advertiserType,
+    phone: advertiserPhone,
+    whatsapp: advertiserPhone,
+    email: String(rawAdvertiser?.email || ''),
+    agencyName: rawAdvertiser?.company ? String(rawAdvertiser.company) : undefined,
+    verified: Boolean(rawAdvertiser?.verified_identity)
+  };
+
+  // 3. Map verification details (`property_verifications` relation)
+  const rawVerif = Array.isArray(row.property_verifications)
+    ? (row.property_verifications[0] as Record<string, unknown> | undefined)
+    : row.property_verifications && typeof row.property_verifications === 'object'
+    ? (row.property_verifications as Record<string, unknown>)
+    : undefined;
+
+  const verificationStatus = ((row.verification_status as VerificationStatus) ||
+    'pending') as VerificationStatus;
+
+  const verificationDetails: Property['verificationDetails'] = {
+    advertiserVerified: Boolean(rawVerif?.advertiser_verified ?? advertiser.verified),
+    locationConfirmed: Boolean(
+      rawVerif?.location_confirmed ?? verificationStatus === 'verified'
+    ),
+    priceConfirmed: Boolean(
+      rawVerif?.price_confirmed ?? verificationStatus === 'verified'
+    ),
+    availabilityConfirmed: Boolean(
+      rawVerif?.availability_confirmed ?? verificationStatus === 'verified'
+    ),
+    verifiedAt: rawVerif?.verified_at
+      ? String(rawVerif.verified_at).split('T')[0]
+      : undefined,
+    notes: rawVerif?.notes ? String(rawVerif.notes) : undefined
+  };
+
+  const transaction = ((row.transaction as TransactionType) || 'buy') as TransactionType;
+  const price = Number(row.price ?? 0);
+  const landSizeDecimals =
+    row.land_size_decimals !== null && row.land_size_decimals !== undefined
+      ? Number(row.land_size_decimals)
+      : undefined;
+  const buildingSizeSqm =
+    row.building_size_sqm !== null && row.building_size_sqm !== undefined
+      ? Number(row.building_size_sqm)
+      : undefined;
+
+  // Derived objective metrics (only when real numeric dimensions exist on the record)
+  const insights: Property['insights'] =
+    buildingSizeSqm || landSizeDecimals
+      ? {
+          pricePerSqm:
+            buildingSizeSqm && buildingSizeSqm > 0
+              ? Math.round(price / buildingSizeSqm)
+              : undefined,
+          pricePerDecimal:
+            landSizeDecimals && landSizeDecimals > 0
+              ? Math.round(price / landSizeDecimals)
+              : undefined
+        }
+      : undefined;
 
   return {
-    ...property,
-    images: safeImages,
-    propertyImages: synthesized
+    id: propertyId,
+    slug: String(row.slug || propertyId),
+    title: String(row.title || ''),
+    transaction,
+    propertyType: ((row.property_type as PropertyType) || 'House') as PropertyType,
+    price,
+    currency: ((row.currency as CurrencyCode) || 'UGX') as CurrencyCode,
+    pricePeriod: ((row.price_period as PricePeriod) ||
+      (transaction === 'rent' ? 'month' : 'total')) as PricePeriod,
+    location: String(row.location || ''),
+    district: String(row.district || 'Kampala'),
+    address: String(
+      row.address || `${String(row.location || '')}, ${String(row.district || 'Kampala')}`
+    ),
+    bedrooms: Number(row.bedrooms ?? 0),
+    bathrooms: Number(row.bathrooms ?? 0),
+    parking: Number(row.parking ?? 0),
+    landSizeDecimals,
+    buildingSizeSqm,
+    tenure: (row.tenure as LandTenure) || undefined,
+    furnished: Boolean(row.furnished),
+    availability: ((row.availability as PropertyAvailability) ||
+      'Available') as PropertyAvailability,
+    verificationStatus,
+    listingStatus: ((row.listing_status as ListingStatus) || 'pending') as ListingStatus,
+    description: String(row.description || ''),
+    features: Array.isArray(row.features) ? (row.features as string[]) : [],
+    images: orderedUrls,
+    propertyImages: persistedImages,
+    floorPlanUrl: row.floor_plan_url ? String(row.floor_plan_url) : undefined,
+    videoUrl: row.video_url ? String(row.video_url) : undefined,
+    advertiser,
+    verificationDetails,
+    insights,
+    coordinates: {
+      lat: Number(row.latitude ?? 0.3136),
+      lng: Number(row.longitude ?? 32.5811)
+    },
+    featured: Boolean(row.featured),
+    dateAdded: String(
+      row.date_added || row.created_at || new Date().toISOString()
+    ).split('T')[0],
+    neighborhoodHighlights: Array.isArray(row.neighborhood_highlights)
+      ? (row.neighborhood_highlights as string[])
+      : undefined
   };
 }
 
 class PropertyService implements IPropertyService {
-  public validatePropertyImageFile(file: File): void {
-    storageService.validatePropertyImageFile(file);
-  }
-
   /**
-   * Hydrates persisted `property_images` records from Supabase PostgreSQL when configured,
-   * making the `property_images` table the source of truth for persisted property photos.
+   * Fetches properties from Supabase PostgreSQL (`public.properties`)
+   * with optional server-side and client-side filtering.
+   * Never falls back to mock or hardcoded property arrays.
    */
-  private async hydrateDatabaseImages(properties: Property[]): Promise<Property[]> {
-    const normalized = properties.map(normalizePropertyImages);
-    if (!isSupabaseConfigured() || !supabase || normalized.length === 0) {
-      return normalized;
-    }
+  public async getProperties(filters?: PropertyQueryFilters): Promise<Property[]> {
+    const client = getRequiredSupabaseClient();
 
     try {
-      const propertyIds = normalized.map((p) => p.id);
-      const { data, error } = await supabase
-        .from('property_images')
-        .select('*')
-        .in('property_id', propertyIds);
+      let query = client
+        .from('properties')
+        .select(PROPERTY_RELATIONAL_SELECT)
+        .order('created_at', { ascending: false });
 
-      if (error || !data || data.length === 0) {
-        return normalized;
+      if (filters?.listingStatus && filters.listingStatus !== 'all') {
+        query = query.eq('listing_status', filters.listingStatus);
       }
 
-      const groupedByProperty = new Map<string, PersistedPropertyImage[]>();
-      for (const rawRow of data as PropertyImageRow[]) {
-        const mapped = mapRowToPersistedImage(rawRow, (p) =>
-          storageService.getPropertyImageUrl(p)
+      if (filters?.transaction && filters.transaction !== 'all') {
+        query = query.eq('transaction', filters.transaction);
+      }
+
+      if (filters?.propertyType && filters.propertyType !== 'all') {
+        query = query.eq('property_type', filters.propertyType);
+      }
+
+      if (filters?.district && filters.district !== 'All Districts') {
+        query = query.ilike('district', filters.district);
+      }
+
+      if (filters?.minPrice && filters.minPrice > 0) {
+        query = query.gte('price', filters.minPrice);
+      }
+
+      if (filters?.maxPrice && filters.maxPrice < 3000000000) {
+        query = query.lte('price', filters.maxPrice);
+      }
+
+      if (filters?.verification === 'verified_only') {
+        query = query.eq('verification_status', 'verified');
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw mapSupabaseError(
+          error,
+          'Unable to load properties. Please refresh the page.'
         );
-        if (!isValidPersistedImageUrl(mapped.url)) continue;
-        const list = groupedByProperty.get(mapped.propertyId) || [];
-        list.push(mapped);
-        groupedByProperty.set(mapped.propertyId, list);
       }
 
-      if (groupedByProperty.size === 0) {
-        return normalized;
+      const mapped = ((data || []) as Record<string, unknown>[]).map(
+        mapSupabaseRowToProperty
+      );
+
+      if (!filters) {
+        return mapped;
       }
 
-      return normalized.map((prop) => {
-        const dbImages = groupedByProperty.get(prop.id);
-        if (!dbImages || dbImages.length === 0) {
-          return prop;
-        }
-        const ordered = [...dbImages]
-          .sort((a, b) => a.displayOrder - b.displayOrder)
-          .map((img, idx) => ({
-            ...img,
-            displayOrder: idx
-          }));
-
-        return {
-          ...prop,
-          images: ordered.map((img) => img.url),
-          propertyImages: ordered
-        };
-      });
-    } catch {
-      return normalized;
+      // Apply remaining granular filters (search text, bedrooms, bathrooms, features, sort)
+      return mapped
+        .filter((p) => {
+          if (filters.location && filters.location.trim() !== '') {
+            const q = filters.location.toLowerCase().trim();
+            const matches =
+              p.location.toLowerCase().includes(q) ||
+              p.district.toLowerCase().includes(q) ||
+              p.address.toLowerCase().includes(q) ||
+              p.title.toLowerCase().includes(q);
+            if (!matches) return false;
+          }
+          if (filters.bedrooms && filters.bedrooms !== 'any') {
+            const minBeds =
+              filters.bedrooms === '5+' ? 5 : Number(filters.bedrooms);
+            if (p.bedrooms < minBeds) return false;
+          }
+          if (filters.bathrooms && filters.bathrooms !== 'any') {
+            const minBaths = parseInt(filters.bathrooms, 10);
+            if (p.bathrooms < minBaths) return false;
+          }
+          if (filters.features && filters.features.length > 0) {
+            const hasAll = filters.features.every((f) => p.features.includes(f));
+            if (!hasAll) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          if (filters.sortBy === 'price_asc') return a.price - b.price;
+          if (filters.sortBy === 'price_desc') return b.price - a.price;
+          if (filters.sortBy === 'newest') {
+            return (
+              new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
+            );
+          }
+          const scoreA =
+            (a.verificationStatus === 'verified' ? 2 : 0) + (a.featured ? 1 : 0);
+          const scoreB =
+            (b.verificationStatus === 'verified' ? 2 : 0) + (b.featured ? 1 : 0);
+          return scoreB - scoreA;
+        });
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to load properties. Please refresh the page.'
+      );
     }
-  }
-
-  public async getProperties(filters?: PropertyQueryFilters): Promise<Property[]> {
-    const all = await this.hydrateDatabaseImages(mockStorage.getProperties());
-    if (!filters) return all;
-
-    return all.filter((item) => {
-      if (!filters.includeUnpublished && item.listingStatus === 'draft') {
-        return false;
-      }
-      if (filters.advertiserId && item.advertiser?.id !== filters.advertiserId) {
-        return false;
-      }
-      if (
-        filters.transaction &&
-        filters.transaction !== 'all' &&
-        item.transaction !== filters.transaction
-      ) {
-        return false;
-      }
-      if (
-        filters.propertyType &&
-        filters.propertyType !== 'all' &&
-        item.propertyType !== filters.propertyType
-      ) {
-        return false;
-      }
-      if (
-        filters.district &&
-        filters.district !== 'All Districts' &&
-        filters.district !== 'All Locations'
-      ) {
-        const queryDist = filters.district.toLowerCase();
-        const matchesDistrict =
-          item.district.toLowerCase() === queryDist ||
-          item.district.toLowerCase().includes(queryDist);
-        if (!matchesDistrict) return false;
-      }
-      if (
-        filters.location &&
-        filters.location !== 'All Locations' &&
-        filters.location.trim() !== ''
-      ) {
-        const queryLoc = filters.location.toLowerCase().trim();
-        const matchesLoc =
-          item.location.toLowerCase().includes(queryLoc) ||
-          item.district.toLowerCase().includes(queryLoc) ||
-          item.address.toLowerCase().includes(queryLoc);
-        if (!matchesLoc) return false;
-      }
-      if (
-        typeof filters.minPrice === 'number' &&
-        filters.minPrice > 0 &&
-        item.price < filters.minPrice
-      ) {
-        return false;
-      }
-      if (
-        typeof filters.maxPrice === 'number' &&
-        filters.maxPrice < 3000000000 &&
-        item.price > filters.maxPrice
-      ) {
-        return false;
-      }
-      if (
-        filters.verification === 'verified_only' &&
-        item.verificationStatus !== 'verified'
-      ) {
-        return false;
-      }
-      return true;
-    });
   }
 
   public async getPropertyById(id: string): Promise<Property | null> {
     if (!id) return null;
-    const all = mockStorage.getProperties();
-    const found = all.find((p) => p.id === id);
-    if (!found) return null;
-    const [hydrated] = await this.hydrateDatabaseImages([found]);
-    return hydrated;
+    const client = getRequiredSupabaseClient();
+
+    try {
+      const { data, error } = await client
+        .from('properties')
+        .select(PROPERTY_RELATIONAL_SELECT)
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error) {
+        throw mapSupabaseError(
+          error,
+          'Unable to load the requested property. Please refresh the page.'
+        );
+      }
+
+      if (!data) return null;
+      return mapSupabaseRowToProperty(data as Record<string, unknown>);
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to load the requested property. Please refresh the page.'
+      );
+    }
   }
 
   public async getPropertyBySlug(slug: string): Promise<Property | null> {
     if (!slug) return null;
-    const all = mockStorage.getProperties();
-    const found = all.find((p) => p.slug === slug || p.id === slug);
-    if (!found) return null;
-    const [hydrated] = await this.hydrateDatabaseImages([found]);
-    return hydrated;
+    const client = getRequiredSupabaseClient();
+
+    try {
+      const { data, error } = await client
+        .from('properties')
+        .select(PROPERTY_RELATIONAL_SELECT)
+        .eq('slug', slug)
+        .maybeSingle();
+
+      if (error) {
+        throw mapSupabaseError(
+          error,
+          'Unable to load the requested property. Please refresh the page.'
+        );
+      }
+
+      if (!data) return null;
+      return mapSupabaseRowToProperty(data as Record<string, unknown>);
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to load the requested property. Please refresh the page.'
+      );
+    }
   }
 
   /**
-   * Creates a new property listing.
-   *
-   * Workflow Security & Storage Rules:
-   * - Generates a proper UUID for the new property (`id`).
-   * - Rejects any browser-local `blob:` URLs from being saved as permanent images.
-   * - Normal advertisers can save as 'draft' or submit as 'pending' (never self-publish or self-verify).
+   * Validates property input before database creation.
+   */
+  private validateCreatePropertyInput(input: CreatePropertyInput): void {
+    const fieldErrors: Record<string, string> = {};
+
+    if (!input.title || input.title.trim().length < 5) {
+      fieldErrors.title = 'Property title must be at least 5 characters.';
+    }
+    if (!Number.isFinite(input.price) || input.price <= 0) {
+      fieldErrors.price = 'Price must be a valid positive number.';
+    }
+    if (!input.district || !input.district.trim()) {
+      fieldErrors.district = 'District is required.';
+    }
+    if (!input.location || !input.location.trim()) {
+      fieldErrors.location = 'Neighborhood / area is required.';
+    }
+    if (
+      !input.coordinates ||
+      !Number.isFinite(input.coordinates.lat) ||
+      !Number.isFinite(input.coordinates.lng)
+    ) {
+      fieldErrors.coordinates = 'Valid GPS coordinates are required.';
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      throw new ServiceError(
+        Object.values(fieldErrors)[0],
+        'VALIDATION_ERROR',
+        400,
+        fieldErrors
+      );
+    }
+  }
+
+  /**
+   * Creates a real property record in `public.properties` and returns the created `Property`.
+   * New listings default to `listing_status = 'pending'` and `verification_status = 'pending'`.
    */
   public async createProperty(
     input: CreatePropertyInput,
     currentUser?: User | null
   ): Promise<Property> {
-    const title = (input.title || '').trim();
-    if (!title) {
-      throw new ServiceError('Property title is required.', 'VALIDATION_ERROR', 400, {
-        title: 'Please provide a descriptive listing title'
-      });
-    }
+    this.validateCreatePropertyInput(input);
 
-    const numericPrice = Number(input.price);
-    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+    const client = getRequiredSupabaseClient();
+    const { data: sessionData } = await client.auth.getSession();
+    const authenticatedUserId = sessionData.session?.user?.id || currentUser?.id;
+
+    if (!authenticatedUserId) {
       throw new ServiceError(
-        'A valid positive property price is required.',
-        'VALIDATION_ERROR',
-        400,
-        { price: 'Price must be greater than zero' }
+        'Please sign in to continue.',
+        'UNAUTHORIZED',
+        401
       );
     }
 
-    const location = (input.location || '').trim();
-    const district = (input.district || '').trim();
-    if (!location || !district) {
-      throw new ServiceError(
-        'District and neighborhood/location are required.',
-        'VALIDATION_ERROR',
-        400,
-        { location: 'Location and district are required' }
-      );
-    }
-
-    const lat = Number(input.coordinates?.lat ?? 0.3476);
-    const lng = Number(input.coordinates?.lng ?? 32.5825);
-    if (
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lng) ||
-      lat < -2 ||
-      lat > 5 ||
-      lng < 29 ||
-      lng > 36
-    ) {
-      throw new ServiceError(
-        'Please provide valid Ugandan GPS coordinates (Latitude between -2° and 5°, Longitude between 29° and 36°).',
-        'VALIDATION_ERROR',
-        400,
-        { coordinates: 'Coordinates out of Ugandan bounds' }
-      );
-    }
-
-    // Never allow blob: URLs to be saved as permanent property images
-    const rawUrls = input.images || [];
-    if (rawUrls.some((u) => isBlobUrl(u))) {
-      throw new ServiceError(
-        'Browser-local blob preview URLs cannot be saved as permanent property images. Upload files via storageService after creating the property.',
-        'VALIDATION_ERROR',
-        400
-      );
-    }
-
-    if (input.propertyImages && input.propertyImages.some((img) => isBlobUrl(img.url))) {
-      throw new ServiceError(
-        'Browser-local blob preview URLs cannot be saved in propertyImages.',
-        'VALIDATION_ERROR',
-        400
-      );
-    }
-
-    const propertyId = (input.id || '').trim() || generateUuid();
-    const requestedStatus: ListingStatus =
+    const sanitizedPermanentUrls = filterPermanentImageUrls(input.images || []);
+    const propertyId = generateUuid();
+    const slug = generateSlug(input.title, input.location);
+    const desiredListingStatus: ListingStatus =
       input.listingStatus === 'draft' ? 'draft' : 'pending';
 
-    const uniqueSuffix = propertyId.slice(0, 6);
-    const slug = `${slugify(title)}-${uniqueSuffix}`;
+    const insertPayload: Record<string, unknown> = {
+      id: propertyId,
+      slug,
+      title: input.title.trim(),
+      transaction: input.transaction,
+      property_type: input.propertyType,
+      price: Number(input.price),
+      currency: input.currency || 'UGX',
+      price_period:
+        input.pricePeriod || (input.transaction === 'rent' ? 'month' : 'total'),
+      location: input.location.trim(),
+      district: input.district.trim(),
+      address:
+        input.address?.trim() ||
+        `${input.location.trim()}, ${input.district.trim()}`,
+      latitude: Number(input.coordinates?.lat ?? 0.3136),
+      longitude: Number(input.coordinates?.lng ?? 32.5811),
+      bedrooms: input.propertyType === 'Land' ? 0 : Math.max(0, Number(input.bedrooms || 0)),
+      bathrooms: input.propertyType === 'Land' ? 0 : Math.max(0, Number(input.bathrooms || 0)),
+      parking: input.propertyType === 'Land' ? 0 : Math.max(0, Number(input.parking || 0)),
+      land_size_decimals:
+        input.landSizeDecimals !== undefined ? Number(input.landSizeDecimals) : null,
+      building_size_sqm:
+        input.buildingSizeSqm !== undefined ? Number(input.buildingSizeSqm) : null,
+      tenure: input.tenure || 'Mailo',
+      furnished: Boolean(input.furnished),
+      availability: 'Available',
+      verification_status: 'pending',
+      listing_status: desiredListingStatus,
+      description: (input.description || '').trim(),
+      features: Array.isArray(input.features) ? input.features : [],
+      floor_plan_url: input.floorPlanUrl?.trim() || null,
+      video_url: input.videoUrl?.trim() || null,
+      neighborhood_highlights: Array.isArray(input.neighborhoodHighlights)
+        ? input.neighborhoodHighlights
+        : [],
+      featured: false,
+      advertiser_id: authenticatedUserId,
+      advertiser_type: input.advertiser?.type || 'Agent',
+      date_added: new Date().toISOString().split('T')[0]
+    };
 
-    const sanitizedUrls = rawUrls
-      .map((url) => url.trim())
-      .filter((url) => isValidPersistedImageUrl(url));
+    try {
+      const { error: insertError } = await client
+        .from('properties')
+        .insert(insertPayload);
 
-    const initialPropertyImages: PersistedPropertyImage[] =
-      input.propertyImages && input.propertyImages.length > 0
-        ? input.propertyImages
-            .filter((img) => isValidPersistedImageUrl(img.url))
-            .map((img, idx) => ({
-              ...img,
-              id: img.id || generateUuid(),
-              propertyId,
-              displayOrder: idx
-            }))
-        : sanitizedUrls.map((url, idx) => ({
+      if (insertError) {
+        throw mapSupabaseError(
+          insertError,
+          'Unable to save this property. Please try again.'
+        );
+      }
+
+      // Persist any initial external permanent image URLs into `property_images`
+      if (sanitizedPermanentUrls.length > 0) {
+        const initialImageRecords: PersistedPropertyImage[] =
+          sanitizedPermanentUrls.map((url, idx) => ({
             id: generateUuid(),
             propertyId,
             url,
             displayOrder: idx,
-            altText: `${title} - Photo ${idx + 1}`
+            altText: `${input.title.trim()} — Photo ${idx + 1}`
           }));
+        await storageService.savePropertyImageRecords(propertyId, initialImageRecords);
+      }
 
-    const persistedRecords = await storageService.savePropertyImageRecords(
-      propertyId,
-      initialPropertyImages
-    );
+      const created = await this.getPropertyById(propertyId);
+      if (!created) {
+        throw new ServiceError(
+          'Unable to load the created property record. Please refresh the page.',
+          'UNKNOWN_ERROR',
+          500
+        );
+      }
 
-    const advertiserPhone = (
-      input.advertiser?.phone ||
-      currentUser?.phone ||
-      '+256 700 000 000'
-    ).trim();
-
-    const newProperty: Property = {
-      id: propertyId,
-      slug,
-      title,
-      transaction: input.transaction || 'buy',
-      propertyType: input.propertyType || 'House',
-      price: numericPrice,
-      currency: input.currency || 'UGX',
-      pricePeriod:
-        input.pricePeriod || (input.transaction === 'rent' ? 'month' : 'total'),
-      location,
-      district,
-      address: (input.address || '').trim() || `${location}, ${district}`,
-      bedrooms: Math.max(0, Number(input.bedrooms) || 0),
-      bathrooms: Math.max(0, Number(input.bathrooms) || 0),
-      parking: Math.max(0, Number(input.parking) || 0),
-      landSizeDecimals:
-        input.landSizeDecimals !== undefined && Number(input.landSizeDecimals) > 0
-          ? Number(input.landSizeDecimals)
-          : undefined,
-      buildingSizeSqm:
-        input.buildingSizeSqm !== undefined && Number(input.buildingSizeSqm) > 0
-          ? Number(input.buildingSizeSqm)
-          : undefined,
-      tenure: input.tenure || 'Mailo',
-      furnished: Boolean(input.furnished),
-      availability: 'Available',
-      verificationStatus: 'pending',
-      listingStatus: requestedStatus,
-      description:
-        (input.description || '').trim() ||
-        `Property listing located in ${location}, ${district}.`,
-      features: Array.isArray(input.features) ? input.features : [],
-      images: persistedRecords.map((img) => img.url),
-      propertyImages: persistedRecords,
-      floorPlanUrl: input.floorPlanUrl?.trim() || undefined,
-      videoUrl: input.videoUrl?.trim() || undefined,
-      advertiser: {
-        id: input.advertiser?.id || currentUser?.id || `adv-${uniqueSuffix}`,
-        name: (
-          input.advertiser?.name ||
-          currentUser?.name ||
-          'Property Representative'
-        ).trim(),
-        type: input.advertiser?.type || mapUserRoleToAdvertiserType(currentUser?.role),
-        phone: advertiserPhone,
-        whatsapp: (input.advertiser?.whatsapp || advertiserPhone).replace(/\s+/g, ''),
-        email: (
-          input.advertiser?.email ||
-          currentUser?.email ||
-          'listings@realityestates.ug'
-        ).trim(),
-        agencyName:
-          input.advertiser?.agencyName?.trim() || currentUser?.company || undefined,
-        verified: Boolean(currentUser?.verifiedIdentity),
-        responseRate: input.advertiser?.responseRate || 'New listing'
-      },
-      verificationDetails: {
-        advertiserVerified: false,
-        locationConfirmed: false,
-        priceConfirmed: false,
-        availabilityConfirmed: false,
-        notes:
-          requestedStatus === 'draft'
-            ? 'Saved as draft. Submit for inspection when ready.'
-            : 'Submitted for Pearl Prime verification inspection and publication review.'
-      },
-      coordinates: {
-        lat,
-        lng
-      },
-      featured: false,
-      dateAdded: new Date().toISOString().split('T')[0],
-      neighborhoodHighlights: input.neighborhoodHighlights
-    };
-
-    const existing = mockStorage.getProperties();
-    const updated = [newProperty, ...existing];
-    mockStorage.setProperties(updated);
-
-    return newProperty;
-  }
-
-  public async updateProperty(id: string, input: UpdatePropertyInput): Promise<Property> {
-    const existing = mockStorage.getProperties();
-    const index = existing.findIndex((p) => p.id === id);
-    if (index === -1) {
-      throw new ServiceError(`Property with ID "${id}" not found.`, 'NOT_FOUND', 404);
-    }
-
-    if (input.images && input.images.some((u) => isBlobUrl(u))) {
-      throw new ServiceError(
-        'Cannot persist browser-local blob URLs in property images.',
-        'VALIDATION_ERROR',
-        400
+      return created;
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to save this property. Please try again.'
       );
     }
-
-    if (input.propertyImages && input.propertyImages.some((img) => isBlobUrl(img.url))) {
-      throw new ServiceError(
-        'Cannot persist browser-local blob URLs in propertyImages.',
-        'VALIDATION_ERROR',
-        400
-      );
-    }
-
-    const current = normalizePropertyImages(existing[index]);
-
-    let nextPropertyImages = current.propertyImages || [];
-    if (input.propertyImages) {
-      nextPropertyImages = input.propertyImages
-        .filter((img) => isValidPersistedImageUrl(img.url))
-        .map((img, idx) => ({
-          ...img,
-          propertyId: id,
-          displayOrder: idx
-        }));
-    } else if (input.images) {
-      const cleanUrls = input.images.filter((url) => isValidPersistedImageUrl(url));
-      nextPropertyImages = cleanUrls.map((url, idx) => {
-        const existingMatch = (current.propertyImages || []).find((p) => p.url === url);
-        return existingMatch
-          ? { ...existingMatch, displayOrder: idx }
-          : {
-              id: generateUuid(),
-              propertyId: id,
-              url,
-              displayOrder: idx
-            };
-      });
-    }
-
-    const updatedProperty: Property = {
-      ...current,
-      title: input.title !== undefined ? input.title.trim() : current.title,
-      transaction: input.transaction ?? current.transaction,
-      propertyType: input.propertyType ?? current.propertyType,
-      price: input.price !== undefined ? Number(input.price) : current.price,
-      currency: input.currency ?? current.currency,
-      pricePeriod: input.pricePeriod ?? current.pricePeriod,
-      location: input.location !== undefined ? input.location.trim() : current.location,
-      district: input.district !== undefined ? input.district.trim() : current.district,
-      address: input.address !== undefined ? input.address.trim() : current.address,
-      bedrooms:
-        input.bedrooms !== undefined
-          ? Math.max(0, Number(input.bedrooms))
-          : current.bedrooms,
-      bathrooms:
-        input.bathrooms !== undefined
-          ? Math.max(0, Number(input.bathrooms))
-          : current.bathrooms,
-      parking:
-        input.parking !== undefined
-          ? Math.max(0, Number(input.parking))
-          : current.parking,
-      landSizeDecimals:
-        input.landSizeDecimals !== undefined
-          ? input.landSizeDecimals
-          : current.landSizeDecimals,
-      buildingSizeSqm:
-        input.buildingSizeSqm !== undefined
-          ? input.buildingSizeSqm
-          : current.buildingSizeSqm,
-      tenure: input.tenure ?? current.tenure,
-      furnished: input.furnished !== undefined ? input.furnished : current.furnished,
-      availability: input.availability ?? current.availability,
-      description:
-        input.description !== undefined ? input.description.trim() : current.description,
-      features: input.features ?? current.features,
-      images: nextPropertyImages.map((img) => img.url),
-      propertyImages: nextPropertyImages,
-      coordinates: input.coordinates ?? current.coordinates,
-      advertiser: input.advertiser
-        ? {
-            ...current.advertiser,
-            ...input.advertiser
-          }
-        : current.advertiser,
-      listingStatus: input.listingStatus ?? current.listingStatus
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedProperty;
-    mockStorage.setProperties(nextList);
-
-    return updatedProperty;
   }
 
   /**
-   * Uploads image files for an existing property via `storageService`, creates
-   * `property_images` records, and appends the persisted images to the property in order.
+   * Updates an existing property record in `public.properties`.
+   */
+  public async updateProperty(
+    id: string,
+    input: UpdatePropertyInput
+  ): Promise<Property> {
+    if (!id) {
+      throw new ServiceError('Property ID is required for update.', 'VALIDATION_ERROR', 400);
+    }
+
+    const client = getRequiredSupabaseClient();
+    const updatePayload: Record<string, unknown> = {};
+
+    if (input.title !== undefined) updatePayload.title = input.title.trim();
+    if (input.transaction !== undefined) updatePayload.transaction = input.transaction;
+    if (input.propertyType !== undefined) updatePayload.property_type = input.propertyType;
+    if (input.price !== undefined) updatePayload.price = Number(input.price);
+    if (input.currency !== undefined) updatePayload.currency = input.currency;
+    if (input.pricePeriod !== undefined) updatePayload.price_period = input.pricePeriod;
+    if (input.location !== undefined) updatePayload.location = input.location.trim();
+    if (input.district !== undefined) updatePayload.district = input.district.trim();
+    if (input.address !== undefined) updatePayload.address = input.address.trim();
+    if (input.coordinates !== undefined) {
+      updatePayload.latitude = Number(input.coordinates.lat);
+      updatePayload.longitude = Number(input.coordinates.lng);
+    }
+    if (input.bedrooms !== undefined) updatePayload.bedrooms = Number(input.bedrooms);
+    if (input.bathrooms !== undefined) updatePayload.bathrooms = Number(input.bathrooms);
+    if (input.parking !== undefined) updatePayload.parking = Number(input.parking);
+    if (input.landSizeDecimals !== undefined) {
+      updatePayload.land_size_decimals = input.landSizeDecimals;
+    }
+    if (input.buildingSizeSqm !== undefined) {
+      updatePayload.building_size_sqm = input.buildingSizeSqm;
+    }
+    if (input.tenure !== undefined) updatePayload.tenure = input.tenure;
+    if (input.furnished !== undefined) updatePayload.furnished = Boolean(input.furnished);
+    if (input.availability !== undefined) updatePayload.availability = input.availability;
+    if (input.listingStatus !== undefined) {
+      updatePayload.listing_status = input.listingStatus;
+    }
+    if (input.description !== undefined) updatePayload.description = input.description.trim();
+    if (input.features !== undefined) updatePayload.features = input.features;
+    if (input.floorPlanUrl !== undefined) {
+      updatePayload.floor_plan_url = input.floorPlanUrl?.trim() || null;
+    }
+    if (input.videoUrl !== undefined) {
+      updatePayload.video_url = input.videoUrl?.trim() || null;
+    }
+    if (input.neighborhoodHighlights !== undefined) {
+      updatePayload.neighborhood_highlights = input.neighborhoodHighlights;
+    }
+    if (input.advertiser?.type !== undefined) {
+      updatePayload.advertiser_type = input.advertiser.type;
+    }
+
+    try {
+      if (Object.keys(updatePayload).length > 0) {
+        const { error } = await client
+          .from('properties')
+          .update(updatePayload)
+          .eq('id', id);
+
+        if (error) {
+          throw mapSupabaseError(
+            error,
+            'Unable to save this property. Please try again.'
+          );
+        }
+      }
+
+      const updated = await this.getPropertyById(id);
+      if (!updated) {
+        throw new ServiceError(
+          `Property with ID "${id}" was not found.`,
+          'NOT_FOUND',
+          404
+        );
+      }
+
+      return updated;
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to save this property. Please try again.'
+      );
+    }
+  }
+
+  public validatePropertyImageFile(file: File): void {
+    storageService.validatePropertyImageFile(file);
+  }
+
+  /**
+   * Uploads selected `File` objects to Supabase Storage (`property-images` bucket)
+   * and creates `property_images` records in PostgreSQL.
    */
   public async uploadPropertyImages(
     propertyId: string,
@@ -535,69 +644,34 @@ class PropertyService implements IPropertyService {
   ): Promise<PersistedPropertyImage[]> {
     if (!propertyId) {
       throw new ServiceError(
-        'Property must be saved before uploading images.',
+        'A saved property ID is required before uploading images.',
         'VALIDATION_ERROR',
         400
       );
     }
+    if (!files || files.length === 0) return [];
 
-    const existing = mockStorage.getProperties();
-    const index = existing.findIndex((p) => p.id === propertyId);
-    if (index === -1) {
-      throw new ServiceError(
-        `Property with ID "${propertyId}" not found.`,
-        'NOT_FOUND',
-        404
-      );
-    }
+    const existingImages = await storageService.getPropertyImages(propertyId);
+    const baseOrder = startOrder ?? existingImages.length;
 
-    const current = normalizePropertyImages(existing[index]);
-    const currentImages = current.propertyImages || [];
-    const baseOrder = startOrder !== undefined ? startOrder : currentImages.length;
-
-    const uploadedRecords = await storageService.uploadPropertyImages(
+    return storageService.uploadPropertyImages(
       files,
       propertyId,
       baseOrder,
       onFileProgress
     );
-
-    const mergedImages = [...currentImages, ...uploadedRecords]
-      .filter((img) => isValidPersistedImageUrl(img.url))
-      .map((img, idx) => ({
-        ...img,
-        displayOrder: idx
-      }));
-
-    const updatedProperty: Property = {
-      ...current,
-      images: mergedImages.map((img) => img.url),
-      propertyImages: mergedImages
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedProperty;
-    mockStorage.setProperties(nextList);
-
-    return uploadedRecords;
   }
 
   /**
-   * Deletes a persisted property image from Supabase Storage + `property_images`
-   * and updates the property's persisted image ordering.
+   * Removes a persisted image from Supabase Storage and deletes its `property_images` row,
+   * then re-indexes remaining images.
    */
   public async removePropertyImage(
     propertyId: string,
     image: Pick<PersistedPropertyImage, 'id' | 'storagePath' | 'url'>
   ): Promise<Property> {
-    const existing = mockStorage.getProperties();
-    const index = existing.findIndex((p) => p.id === propertyId);
-    if (index === -1) {
-      throw new ServiceError(
-        `Property with ID "${propertyId}" not found.`,
-        'NOT_FOUND',
-        404
-      );
+    if (!propertyId) {
+      throw new ServiceError('Property ID is required.', 'VALIDATION_ERROR', 400);
     }
 
     await storageService.deletePropertyImage(
@@ -606,110 +680,97 @@ class PropertyService implements IPropertyService {
       propertyId
     );
 
-    const current = normalizePropertyImages(existing[index]);
-    const remaining = (current.propertyImages || [])
-      .filter((item) => item.id !== image.id && item.url !== image.url)
-      .map((item, idx) => ({
-        ...item,
-        displayOrder: idx
-      }));
-
-    if (isSupabaseConfigured() && remaining.length > 0) {
+    const remaining = await storageService.getPropertyImages(propertyId);
+    if (remaining.length > 0) {
       await storageService.reorderPropertyImages(
         propertyId,
-        remaining.map((img) => img.id)
+        remaining.map((r) => r.id)
       );
     }
 
-    const updatedProperty: Property = {
-      ...current,
-      images: remaining.map((img) => img.url),
-      propertyImages: remaining
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedProperty;
-    mockStorage.setProperties(nextList);
-
-    return updatedProperty;
+    const refreshed = await this.getPropertyById(propertyId);
+    if (!refreshed) {
+      throw new ServiceError('Property not found after image removal.', 'NOT_FOUND', 404);
+    }
+    return refreshed;
   }
 
   /**
-   * Reorders a property's persisted images and updates `display_order` in `property_images`.
+   * Updates display order in `property_images`.
    */
   public async reorderPropertyImages(
     propertyId: string,
     orderedImages: PersistedPropertyImage[]
   ): Promise<Property> {
-    const existing = mockStorage.getProperties();
-    const index = existing.findIndex((p) => p.id === propertyId);
-    if (index === -1) {
-      throw new ServiceError(
-        `Property with ID "${propertyId}" not found.`,
-        'NOT_FOUND',
-        404
+    if (!propertyId) {
+      throw new ServiceError('Property ID is required.', 'VALIDATION_ERROR', 400);
+    }
+
+    const sanitizedOrder = orderedImages
+      .filter((img) => Boolean(img.id) && !img.url.startsWith('blob:'))
+      .map((img) => img.id);
+
+    await storageService.reorderPropertyImages(propertyId, sanitizedOrder);
+
+    const refreshed = await this.getPropertyById(propertyId);
+    if (!refreshed) {
+      throw new ServiceError('Property not found after reordering images.', 'NOT_FOUND', 404);
+    }
+    return refreshed;
+  }
+
+  /**
+   * Submits a draft listing for admin verification (`listing_status = 'pending'`, `verification_status = 'pending'`).
+   */
+  public async submitPropertyForVerification(id: string): Promise<Property> {
+    const client = getRequiredSupabaseClient();
+
+    try {
+      const { error } = await client
+        .from('properties')
+        .update({
+          listing_status: 'pending',
+          verification_status: 'pending'
+        })
+        .eq('id', id);
+
+      if (error) {
+        throw mapSupabaseError(
+          error,
+          'Unable to submit this listing for verification. Please try again.'
+        );
+      }
+
+      const updated = await this.getPropertyById(id);
+      if (!updated) {
+        throw new ServiceError(
+          `Property with ID "${id}" not found.`,
+          'NOT_FOUND',
+          404
+        );
+      }
+      return updated;
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to submit this listing for verification. Please try again.'
       );
     }
-
-    const normalized = orderedImages
-      .filter((img) => isValidPersistedImageUrl(img.url))
-      .map((img, idx) => ({
-        ...img,
-        propertyId,
-        displayOrder: idx
-      }));
-
-    await storageService.reorderPropertyImages(
-      propertyId,
-      normalized.map((img) => img.id)
-    );
-
-    const current = normalizePropertyImages(existing[index]);
-    const updatedProperty: Property = {
-      ...current,
-      images: normalized.map((img) => img.url),
-      propertyImages: normalized
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedProperty;
-    mockStorage.setProperties(nextList);
-
-    return updatedProperty;
   }
 
-  public async submitPropertyForVerification(id: string): Promise<Property> {
-    const existing = mockStorage.getProperties();
-    const index = existing.findIndex((p) => p.id === id);
-    if (index === -1) {
-      throw new ServiceError(`Property with ID "${id}" not found.`, 'NOT_FOUND', 404);
-    }
-
-    const current = normalizePropertyImages(existing[index]);
-    const updatedProperty: Property = {
-      ...current,
-      listingStatus: 'pending',
-      verificationStatus: 'pending',
-      verificationDetails: {
-        ...current.verificationDetails,
-        notes:
-          'Submitted by advertiser for Pearl Prime verification and publication review.'
-      }
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedProperty;
-    mockStorage.setProperties(nextList);
-
-    return updatedProperty;
-  }
-
+  /**
+   * Admin / authorized verification update: updates `properties` status columns and
+   * upserts the audit record in `property_verifications`.
+   */
   public async updatePropertyVerification(
     input: UpdatePropertyVerificationInput
   ): Promise<Property> {
-    const existing = mockStorage.getProperties();
-    const index = existing.findIndex((p) => p.id === input.propertyId);
-    if (index === -1) {
+    const client = getRequiredSupabaseClient();
+    const { data: sessionData } = await client.auth.getSession();
+    const adminUserId = sessionData.session?.user?.id || null;
+
+    const current = await this.getPropertyById(input.propertyId);
+    if (!current) {
       throw new ServiceError(
         `Property with ID "${input.propertyId}" not found.`,
         'NOT_FOUND',
@@ -717,42 +778,94 @@ class PropertyService implements IPropertyService {
       );
     }
 
-    const current = normalizePropertyImages(existing[index]);
-    const isVerified = input.status === 'verified';
+    const targetStatus: VerificationStatus =
+      input.verificationStatus || input.status || current.verificationStatus;
 
-    const nextVerificationDetails = {
-      advertiserVerified:
-        input.checklist?.advertiserVerified ?? (isVerified ? true : false),
-      locationConfirmed:
-        input.checklist?.locationConfirmed ?? (isVerified ? true : false),
-      priceConfirmed:
-        input.checklist?.priceConfirmed ?? (isVerified ? true : false),
-      availabilityConfirmed:
-        input.checklist?.availabilityConfirmed ?? (isVerified ? true : false),
-      verifiedAt: isVerified ? new Date().toISOString().split('T')[0] : undefined,
-      notes: input.notes?.trim() || current.verificationDetails.notes
+    const nextDetails = {
+      advertiser_verified:
+        input.advertiserVerified ??
+        input.checklist?.advertiserVerified ??
+        current.verificationDetails.advertiserVerified ??
+        false,
+      location_confirmed:
+        input.locationConfirmed ??
+        input.checklist?.locationConfirmed ??
+        current.verificationDetails.locationConfirmed ??
+        false,
+      price_confirmed:
+        input.priceConfirmed ??
+        input.checklist?.priceConfirmed ??
+        current.verificationDetails.priceConfirmed ??
+        false,
+      availability_confirmed:
+        input.availabilityConfirmed ??
+        input.checklist?.availabilityConfirmed ??
+        current.verificationDetails.availabilityConfirmed ??
+        false,
+      notes: input.notes ?? current.verificationDetails.notes ?? null,
+      verified_at:
+        targetStatus === 'verified' ? new Date().toISOString() : null,
+      verified_by: adminUserId
     };
 
-    let nextListingStatus: ListingStatus = current.listingStatus;
-    if (input.publishListing !== undefined) {
-      nextListingStatus = input.publishListing ? 'published' : 'pending';
-    } else if (isVerified) {
-      nextListingStatus = 'published';
+    const nextListingStatus: ListingStatus =
+      input.publishListing !== undefined
+        ? input.publishListing
+          ? 'published'
+          : 'pending'
+        : targetStatus === 'verified'
+        ? 'published'
+        : current.listingStatus;
+
+    try {
+      const { error: propError } = await client
+        .from('properties')
+        .update({
+          verification_status: targetStatus,
+          listing_status: nextListingStatus
+        })
+        .eq('id', input.propertyId);
+
+      if (propError) {
+        throw mapSupabaseError(
+          propError,
+          'Unable to update property verification status.'
+        );
+      }
+
+      // Check if a `property_verifications` row already exists for this property
+      const { data: existingVerif } = await client
+        .from('property_verifications')
+        .select('id')
+        .eq('property_id', input.propertyId)
+        .maybeSingle();
+
+      if (existingVerif?.id) {
+        await client
+          .from('property_verifications')
+          .update(nextDetails)
+          .eq('id', existingVerif.id);
+      } else {
+        await client.from('property_verifications').insert({
+          id: generateUuid(),
+          property_id: input.propertyId,
+          ...nextDetails
+        });
+      }
+
+      const refreshed = await this.getPropertyById(input.propertyId);
+      if (!refreshed) {
+        throw new ServiceError('Property not found after verification update.', 'NOT_FOUND', 404);
+      }
+
+      return refreshed;
+    } catch (err) {
+      throw mapSupabaseError(
+        err,
+        'Unable to update property verification status.'
+      );
     }
-
-    const updatedProperty: Property = {
-      ...current,
-      verificationStatus: input.status,
-      listingStatus: nextListingStatus,
-      verificationDetails: nextVerificationDetails
-    };
-
-    const nextList = [...existing];
-    nextList[index] = updatedProperty;
-    mockStorage.setProperties(nextList);
-
-    return updatedProperty;
   }
 }
 
-export const propertyService: IPropertyService = new PropertyService();
+export const propertyService = new PropertyService();
