@@ -7,6 +7,11 @@ import { defineConfig, loadEnv } from 'vite';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const DEFAULT_PUBLIC_SUPABASE_URL = 'https://lkzqjhlrmogspwvamnvh.supabase.co';
+const DEFAULT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
+  'sb_publishable_16Zi8k1dUMoqegjnw5ezWQ_WxPmc4XS';
+const DEFAULT_PUBLIC_STORAGE_BUCKET = 'property-images';
+
 /**
  * Parses a key=value dotenv file directly from disk so non-empty values in `.env`
  * or `.env.local` are not shadowed when a cloud/container runtime injects empty
@@ -52,12 +57,14 @@ function isPlaceholderValue(value: string | undefined): boolean {
 function resolveEnvValue(
   key: string,
   viteLoaded: Record<string, string>,
-  dotEnvValues: Record<string, string>
+  dotEnvValues: Record<string, string>,
+  fallbackValue = ''
 ): string {
   const candidates = [
     process.env[key],
     viteLoaded[key],
-    dotEnvValues[key]
+    dotEnvValues[key],
+    fallbackValue
   ];
 
   for (const candidate of candidates) {
@@ -72,35 +79,36 @@ export default defineConfig(({ mode }) => {
   const viteLoaded = loadEnv(mode, __dirname, '');
   const dotEnvValues = {
     ...parseDotEnvFile(resolve(__dirname, '.env')),
+    ...parseDotEnvFile(resolve(__dirname, '.env.production')),
     ...parseDotEnvFile(resolve(__dirname, '.env.local'))
   };
 
   const resolvedSupabaseUrl = resolveEnvValue(
     'VITE_SUPABASE_URL',
     viteLoaded,
-    dotEnvValues
+    dotEnvValues,
+    DEFAULT_PUBLIC_SUPABASE_URL
   )
     .replace(/\/rest\/v1\/?$/i, '')
     .replace(/\/+$/, '');
 
   const resolvedPublishableKey =
     resolveEnvValue('VITE_SUPABASE_PUBLISHABLE_KEY', viteLoaded, dotEnvValues) ||
-    resolveEnvValue('VITE_SUPABASE_ANON_KEY', viteLoaded, dotEnvValues);
+    resolveEnvValue('VITE_SUPABASE_ANON_KEY', viteLoaded, dotEnvValues) ||
+    DEFAULT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
   const resolvedStorageBucket =
-    resolveEnvValue('VITE_SUPABASE_STORAGE_BUCKET', viteLoaded, dotEnvValues) ||
-    'property-images';
+    resolveEnvValue(
+      'VITE_SUPABASE_STORAGE_BUCKET',
+      viteLoaded,
+      dotEnvValues,
+      DEFAULT_PUBLIC_STORAGE_BUCKET
+    ) || DEFAULT_PUBLIC_STORAGE_BUCKET;
 
   // Ensure process.env also reflects the resolved non-empty values for Vite's internal env plugin
-  if (resolvedSupabaseUrl) {
-    process.env.VITE_SUPABASE_URL = resolvedSupabaseUrl;
-  }
-  if (resolvedPublishableKey) {
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY = resolvedPublishableKey;
-  }
-  if (resolvedStorageBucket) {
-    process.env.VITE_SUPABASE_STORAGE_BUCKET = resolvedStorageBucket;
-  }
+  process.env.VITE_SUPABASE_URL = resolvedSupabaseUrl;
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = resolvedPublishableKey;
+  process.env.VITE_SUPABASE_STORAGE_BUCKET = resolvedStorageBucket;
 
   return {
     root: __dirname,

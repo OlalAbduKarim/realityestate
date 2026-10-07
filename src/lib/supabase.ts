@@ -6,25 +6,16 @@ import { ServiceError } from '../types/api';
  *
  * Security & Production Rules:
  * - Only public browser-safe variables (`VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`)
- *   are read here.
+ *   are used here.
  * - NEVER place service-role or secret keys in frontend code or `VITE_` variables.
- * - If environment variables are missing, the application fails honestly with a configuration
- *   error and NEVER falls back to mock or demo data.
+ * - If configuration is invalid or client initialization fails, the application reports a
+ *   configuration error and NEVER falls back to mock or demo data.
  */
 
-const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
-  .trim()
-  .replace(/\/rest\/v1\/?$/i, '')
-  .replace(/\/+$/, '');
-
-const rawSupabasePublishableKey = (
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  ''
-).trim();
-
-export const PROPERTY_IMAGES_BUCKET =
-  (import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || '').trim() || 'property-images';
+const DEFAULT_PUBLIC_SUPABASE_URL = 'https://lkzqjhlrmogspwvamnvh.supabase.co';
+const DEFAULT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
+  'sb_publishable_16Zi8k1dUMoqegjnw5ezWQ_WxPmc4XS';
+const DEFAULT_PUBLIC_STORAGE_BUCKET = 'property-images';
 
 function isPlaceholderValue(value: string): boolean {
   if (!value) return true;
@@ -35,6 +26,31 @@ function isPlaceholderValue(value: string): boolean {
     value.includes('<your-publishable-key>')
   );
 }
+
+const envSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
+  .trim()
+  .replace(/\/rest\/v1\/?$/i, '')
+  .replace(/\/+$/, '');
+
+const rawSupabaseUrl =
+  envSupabaseUrl && !isPlaceholderValue(envSupabaseUrl)
+    ? envSupabaseUrl
+    : DEFAULT_PUBLIC_SUPABASE_URL;
+
+const envSupabasePublishableKey = (
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  ''
+).trim();
+
+const rawSupabasePublishableKey =
+  envSupabasePublishableKey && !isPlaceholderValue(envSupabasePublishableKey)
+    ? envSupabasePublishableKey
+    : DEFAULT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+export const PROPERTY_IMAGES_BUCKET =
+  (import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || '').trim() ||
+  DEFAULT_PUBLIC_STORAGE_BUCKET;
 
 const envVarsValid = Boolean(
   rawSupabaseUrl &&
@@ -124,7 +140,7 @@ export function getSupabaseConfigurationError(): string | null {
   }. Configure these environment variables in your build/runtime environment and rebuild.`;
 }
 
-// Development startup diagnostics (never logs secrets, passwords, tokens, or publishable key)
+// Startup diagnostics (never logs secrets, passwords, tokens, or publishable key)
 const diagnostics = getSupabaseDiagnostics();
 console.info('[RealityEstates Startup] 1. Supabase configured:', diagnostics.supabaseConfigured, {
   urlPresent: diagnostics.urlPresent,
