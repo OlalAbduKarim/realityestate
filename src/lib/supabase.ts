@@ -36,14 +36,65 @@ function isPlaceholderValue(value: string): boolean {
   );
 }
 
+const envVarsValid = Boolean(
+  rawSupabaseUrl &&
+    rawSupabasePublishableKey &&
+    !isPlaceholderValue(rawSupabaseUrl) &&
+    !isPlaceholderValue(rawSupabasePublishableKey) &&
+    /^https?:\/\/.+/i.test(rawSupabaseUrl)
+);
+
+let clientInitError: Error | null = null;
+let initializedClient: SupabaseClient | null = null;
+
+if (envVarsValid) {
+  try {
+    initializedClient = createClient(rawSupabaseUrl, rawSupabasePublishableKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    });
+  } catch (err) {
+    clientInitError =
+      err instanceof Error ? err : new Error(String(err ?? 'Unknown Supabase client error'));
+    initializedClient = null;
+  }
+}
+
+export const supabase: SupabaseClient | null = initializedClient;
+
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    rawSupabaseUrl &&
-      rawSupabasePublishableKey &&
-      !isPlaceholderValue(rawSupabaseUrl) &&
-      !isPlaceholderValue(rawSupabasePublishableKey) &&
-      /^https?:\/\/.+/i.test(rawSupabaseUrl)
-  );
+  return Boolean(envVarsValid && supabase && !clientInitError);
+}
+
+export interface SupabaseDiagnostics {
+  supabaseConfigured: boolean;
+  clientCreated: boolean;
+  urlPresent: boolean;
+  urlValidFormat: boolean;
+  publishableKeyPresent: boolean;
+  storageBucket: string;
+  mode: string;
+  isDev: boolean;
+  initErrorMessage: string | null;
+}
+
+export function getSupabaseDiagnostics(): SupabaseDiagnostics {
+  return {
+    supabaseConfigured: isSupabaseConfigured(),
+    clientCreated: Boolean(supabase),
+    urlPresent: Boolean(rawSupabaseUrl && !isPlaceholderValue(rawSupabaseUrl)),
+    urlValidFormat: /^https?:\/\/.+/i.test(rawSupabaseUrl),
+    publishableKeyPresent: Boolean(
+      rawSupabasePublishableKey && !isPlaceholderValue(rawSupabasePublishableKey)
+    ),
+    storageBucket: PROPERTY_IMAGES_BUCKET,
+    mode: String(import.meta.env.MODE || 'unknown'),
+    isDev: Boolean(import.meta.env.DEV),
+    initErrorMessage: clientInitError ? clientInitError.message : null
+  };
 }
 
 export function getSupabaseConfigurationError(): string | null {
@@ -51,28 +102,47 @@ export function getSupabaseConfigurationError(): string | null {
     return null;
   }
 
-  const isDev = Boolean(import.meta.env.DEV);
-  if (isDev) {
-    const missing: string[] = [];
-    if (!rawSupabaseUrl) missing.push('VITE_SUPABASE_URL');
-    if (!rawSupabasePublishableKey) missing.push('VITE_SUPABASE_PUBLISHABLE_KEY');
-    return `Missing required Supabase environment variable(s): ${
-      missing.join(', ') || 'VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY'
-    }. Set these in your .env file and restart the Vite development server.`;
+  if (clientInitError) {
+    return `Supabase client initialization threw an exception: ${clientInitError.message}`;
   }
 
-  return 'Reality Estates could not initialize its backend connection. Please try again later or contact support.';
+  const missing: string[] = [];
+  if (!rawSupabaseUrl || isPlaceholderValue(rawSupabaseUrl)) {
+    missing.push('VITE_SUPABASE_URL');
+  } else if (!/^https?:\/\/.+/i.test(rawSupabaseUrl)) {
+    missing.push('VITE_SUPABASE_URL (invalid URL format)');
+  }
+
+  if (!rawSupabasePublishableKey || isPlaceholderValue(rawSupabasePublishableKey)) {
+    missing.push('VITE_SUPABASE_PUBLISHABLE_KEY');
+  }
+
+  return `Missing or invalid required Supabase environment variable(s) in current build (mode="${
+    import.meta.env.MODE
+  }"): ${
+    missing.join(', ') || 'VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY'
+  }. Configure these environment variables in your build/runtime environment and rebuild.`;
 }
 
-export const supabase: SupabaseClient | null = isSupabaseConfigured()
-  ? createClient(rawSupabaseUrl, rawSupabasePublishableKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true
-      }
-    })
-  : null;
+// Development startup diagnostics (never logs secrets, passwords, tokens, or publishable key)
+const diagnostics = getSupabaseDiagnostics();
+console.info('[RealityEstates Startup] 1. Supabase configured:', diagnostics.supabaseConfigured, {
+  urlPresent: diagnostics.urlPresent,
+  urlValidFormat: diagnostics.urlValidFormat,
+  publishableKeyPresent: diagnostics.publishableKeyPresent,
+  storageBucket: diagnostics.storageBucket,
+  mode: diagnostics.mode,
+  isDev: diagnostics.isDev
+});
+
+if (diagnostics.clientCreated) {
+  console.info('[RealityEstates Startup] 2. Supabase client creation: succeeded');
+} else {
+  console.error(
+    '[RealityEstates Startup] 2. Supabase client creation: failed',
+    diagnostics.initErrorMessage || getSupabaseConfigurationError()
+  );
+}
 
 export function getRequiredSupabaseClient(): SupabaseClient {
   if (!supabase) {

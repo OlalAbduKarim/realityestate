@@ -410,13 +410,22 @@ class AuthService implements IAuthService {
     try {
       const { data, error } = await client.auth.getSession();
       if (error) {
+        console.error('[RealityEstates Startup] getSession(): failed', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
         throw mapSupabaseAuthError(
           error,
           'Unable to verify your current session.'
         );
       }
+      console.info('[RealityEstates Startup] getSession(): succeeded', {
+        hasActiveSession: Boolean(data.session)
+      });
       return data.session ?? null;
     } catch (err) {
+      console.error('[RealityEstates Startup] getSession() exception:', err);
       if (err instanceof ServiceError && err.code === 'SESSION_EXPIRED') {
         await client.auth.signOut().catch(() => {});
       }
@@ -440,23 +449,75 @@ class AuthService implements IAuthService {
     try {
       const { data: sessionData, error: sessionErr } =
         await client.auth.getSession();
-      if (sessionErr || !sessionData.session?.user) {
+
+      if (sessionErr) {
+        console.error('[RealityEstates Startup] 3. getSession(): failed', {
+          message: sessionErr.message,
+          status: sessionErr.status,
+          name: sessionErr.name
+        });
         return null;
       }
 
-      const authUser = sessionData.session.user;
+      const hasSession = Boolean(sessionData.session?.user);
+      console.info('[RealityEstates Startup] 3. getSession(): succeeded', {
+        hasActiveSession: hasSession
+      });
+
+      if (!sessionData.session?.user) {
+        console.info(
+          '[RealityEstates Startup] 4. getUser(): skipped (no active session — anonymous visitor)'
+        );
+        console.info(
+          '[RealityEstates Startup] 5. profile fetch: skipped (no active session — anonymous visitor)'
+        );
+        return null;
+      }
+
+      const { data: userData, error: userErr } = await client.auth.getUser();
+      if (userErr) {
+        console.error('[RealityEstates Startup] 4. getUser(): failed', {
+          message: userErr.message,
+          status: userErr.status,
+          name: userErr.name
+        });
+      } else {
+        console.info('[RealityEstates Startup] 4. getUser(): succeeded', {
+          userId: userData.user?.id
+        });
+      }
+
+      const authUser = userData?.user || sessionData.session.user;
       const { data: profileRow, error: profileErr } = await client
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .maybeSingle();
 
+      if (profileErr) {
+        console.error('[RealityEstates Startup] 5. profile fetch: failed', {
+          message: profileErr.message,
+          code: profileErr.code,
+          details: profileErr.details,
+          hint: profileErr.hint
+        });
+      } else {
+        console.info('[RealityEstates Startup] 5. profile fetch: succeeded', {
+          profileFound: Boolean(profileRow),
+          role: (profileRow as ProfileRow | null)?.role ?? null
+        });
+      }
+
       if (!profileErr && profileRow) {
         return mapProfileAndAuthToUser(authUser, profileRow as ProfileRow);
       }
 
       return await this.syncProfileForAuthUser(authUser);
-    } catch {
+    } catch (err) {
+      console.error(
+        '[RealityEstates Startup] getCurrentProfile() unexpected exception:',
+        err
+      );
       return null;
     }
   }

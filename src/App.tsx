@@ -12,6 +12,7 @@ import { DashboardView } from './views/DashboardView';
 import { ListPropertyView } from './views/ListPropertyView';
 import { AdminView } from './views/AdminView';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { getSupabaseDiagnostics } from './lib/supabase';
 import { CheckCircle2, Info, AlertCircle, X, Building2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -28,7 +29,7 @@ const AppContent: React.FC = () => {
   // Production Startup & Configuration Check (Requirement 10 & 26):
   // Never fall back to Demo Mode if Supabase environment variables are missing.
   if (!isStorageConfigured) {
-    const isDev = Boolean(import.meta.env.DEV);
+    const diagnostics = getSupabaseDiagnostics();
     return (
       <div className="min-h-screen flex items-center justify-center bg-stone-50 dark:bg-stone-950 p-6 font-sans">
         <div className="max-w-lg w-full bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-lg p-8 text-center">
@@ -40,7 +41,7 @@ const AppContent: React.FC = () => {
             <span>Reality Estates</span>
           </div>
           <h1 className="text-2xl font-bold text-stone-900 dark:text-white mb-3">
-            {isDev
+            {diagnostics.isDev
               ? 'Supabase Backend Configuration Required'
               : 'Service Temporarily Unavailable'}
           </h1>
@@ -48,15 +49,32 @@ const AppContent: React.FC = () => {
             {configurationError ||
               'Reality Estates could not connect to the server. Please check your configuration and try again.'}
           </p>
-          {isDev && (
-            <div className="text-left bg-stone-100 dark:bg-stone-950 rounded-xl p-4 border border-stone-200 dark:border-stone-800 text-xs font-mono text-stone-700 dark:text-stone-300 space-y-1">
-              <div className="text-stone-500 dark:text-stone-400 font-sans font-semibold mb-1.5">
-                Required in .env:
-              </div>
-              <div>VITE_SUPABASE_URL=https://&lt;project-ref&gt;.supabase.co</div>
-              <div>VITE_SUPABASE_PUBLISHABLE_KEY=&lt;your-publishable-key&gt;</div>
+          <div className="text-left bg-stone-100 dark:bg-stone-950 rounded-xl p-4 border border-stone-200 dark:border-stone-800 text-xs font-mono text-stone-700 dark:text-stone-300 space-y-1.5">
+            <div className="text-stone-500 dark:text-stone-400 font-sans font-semibold mb-1.5">
+              Startup Diagnostics (mode: {diagnostics.mode}):
             </div>
-          )}
+            <div>
+              VITE_SUPABASE_URL:{' '}
+              {diagnostics.urlPresent
+                ? diagnostics.urlValidFormat
+                  ? 'present (valid URL)'
+                  : 'present (invalid URL format)'
+                : 'MISSING'}
+            </div>
+            <div>
+              VITE_SUPABASE_PUBLISHABLE_KEY:{' '}
+              {diagnostics.publishableKeyPresent ? 'present' : 'MISSING'}
+            </div>
+            <div>VITE_SUPABASE_STORAGE_BUCKET: {diagnostics.storageBucket}</div>
+            <div>
+              Supabase Client Created: {diagnostics.clientCreated ? 'true' : 'false'}
+            </div>
+            {diagnostics.initErrorMessage && (
+              <div className="text-rose-600 dark:text-rose-400">
+                Init Error: {diagnostics.initErrorMessage}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

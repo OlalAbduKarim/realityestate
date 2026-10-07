@@ -380,6 +380,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Initial session restoration + real-time auth state listener + initial property fetch
   useEffect(() => {
     if (!isSupabaseConfigured()) {
+      console.error(
+        '[RealityEstates Startup] AppContext initialization aborted: isSupabaseConfigured() === false',
+        { configurationError: getSupabaseConfigurationError() }
+      );
       setAuthStatus('unauthenticated');
       setIsDataLoading(false);
       return;
@@ -388,6 +392,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let isMounted = true;
 
     const initializeAppAndAuth = async () => {
+      console.info('[RealityEstates Startup] AppContext initializeAppAndAuth() starting...');
       setIsDataLoading(true);
       setAuthStatus('loading');
 
@@ -395,12 +400,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const propertiesPromise = propertyService
         .getProperties()
         .then((loadedProps) => {
+          console.info(
+            '[RealityEstates Startup] 6. Public properties fetch: succeeded',
+            { count: loadedProps.length }
+          );
           if (isMounted) {
             setProperties(loadedProps);
             setServiceError(null);
           }
         })
         .catch((err) => {
+          console.error(
+            '[RealityEstates Startup] 6. Public properties fetch: failed',
+            err
+          );
           if (isMounted) {
             setServiceError(
               extractErrorMessage(
@@ -417,15 +430,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!isMounted) return;
 
         if (restoredProfile) {
+          console.info(
+            '[RealityEstates Startup] Auth state resolved: authenticated',
+            { userId: restoredProfile.id, role: restoredProfile.role }
+          );
           setCurrentUser(restoredProfile);
           setAuthStatus('authenticated');
           await syncUserScopedData(restoredProfile);
         } else {
+          console.info(
+            '[RealityEstates Startup] Auth state resolved: unauthenticated (public visitor)'
+          );
           setCurrentUser(null);
           setAuthStatus('unauthenticated');
           await syncUserScopedData(null);
         }
-      } catch {
+      } catch (err) {
+        console.error(
+          '[RealityEstates Startup] Exception during auth/profile initialization:',
+          err
+        );
         if (isMounted) {
           setCurrentUser(null);
           setAuthStatus('unauthenticated');
