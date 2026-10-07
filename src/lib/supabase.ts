@@ -26,10 +26,22 @@ const rawSupabasePublishableKey = (
 export const PROPERTY_IMAGES_BUCKET =
   (import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || '').trim() || 'property-images';
 
+function isPlaceholderValue(value: string): boolean {
+  if (!value) return true;
+  return (
+    value.includes('your-project-ref.supabase.co') ||
+    value.includes('your-public-publishable-key') ||
+    value.includes('<project-ref>') ||
+    value.includes('<your-publishable-key>')
+  );
+}
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(
     rawSupabaseUrl &&
       rawSupabasePublishableKey &&
+      !isPlaceholderValue(rawSupabaseUrl) &&
+      !isPlaceholderValue(rawSupabasePublishableKey) &&
       /^https?:\/\/.+/i.test(rawSupabaseUrl)
   );
 }

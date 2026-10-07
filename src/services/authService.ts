@@ -9,7 +9,6 @@ import {
   ServiceError
 } from '../types/api';
 import { User, UserRole } from '../types/property';
-import { apiClient } from '../lib/apiClient';
 import {
   getRequiredSupabaseClient,
   isSupabaseConfigured
@@ -272,19 +271,6 @@ function mapProfileAndAuthToUser(
 }
 
 class AuthService implements IAuthService {
-  constructor() {
-    apiClient.setAuthTokenProvider(async () => {
-      if (!isSupabaseConfigured()) return null;
-      try {
-        const client = getRequiredSupabaseClient();
-        const { data } = await client.auth.getSession();
-        return data.session?.access_token ?? null;
-      } catch {
-        return null;
-      }
-    });
-  }
-
   public isSupabaseAuthEnabled(): boolean {
     return isSupabaseConfigured();
   }
