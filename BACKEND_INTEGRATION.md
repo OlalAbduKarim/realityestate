@@ -1,114 +1,193 @@
-# Reality Estates — Production Supabase Backend Integration Guide
+# Reality Estates — Supabase Backend & Storage Integration Guide
 
-This document describes the production architecture, database contracts, authentication flows, Row-Level Security (RLS) requirements, and Supabase Storage configuration for the Reality Estates frontend (`React 19 + TypeScript + Vite`).
-
----
-
-## 1. Production Architecture Overview
-
-Reality Estates operates exclusively against Supabase as its authoritative single source of truth:
-
-```text
-React 19 + TypeScript Frontend
-              ↓
-Service Layer (src/services/*)
-              ↓
-Singleton Supabase Client (src/lib/supabase.ts)
-              ↓
-Supabase Auth  •  Supabase PostgreSQL  •  Supabase Storage
-```
-
-There is **no** Demo Mode, **no** mock data fallback, and **no** `localStorage`-based persistence for domain records or user roles.
-
----
-
-## 2. Required Environment Variables
-
-Configure the following browser-safe variables in `.env` / `.env.local` (or deployment environment):
-
+## 1. Environment Variables
+Frontend environment variables (documented in `.env.example`):
 ```env
-VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=<your-public-publishable-key>
+VITE_SUPABASE_URL=https://lkzqjhlrmogspwvamnvh.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 VITE_SUPABASE_STORAGE_BUCKET=property-images
 ```
 
-### Startup Configuration Check & Security Rules
-- On startup, `src/lib/supabase.ts` and `src/App.tsx` verify that `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are present.
-- If either variable is missing, the application displays an explicit configuration error screen in development and a safe service-unavailable screen in production. It never switches to a fake or simulated backend.
-- **NEVER** add `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, or database credentials to `VITE_*` variables or frontend source code.
+---
+
+## 2. Property Photo Upload Architecture (4-Image Limit)
+
+1. **Up to 4 Photos Per Listing (`MAX_PROPERTY_IMAGES_COUNT = 4`)**
+   - Users listing a House/Villa, Apartment, Land/Plot, or Commercial property can upload up to **4 photos**.
+   - **Image #1 (`sort_order = 0`, `is_cover = true`)** is the **Main Cover Photo** displayed on all property cards (`HomeView`, `SearchView`, `DashboardView`).
+   - **Images #1–#4 (`sort_order = 0..3`)** are displayed in:
+     - **Detailed Property View (`PropertyDetailView` / `PropertyGallery`)**: 4-photo hero showcase + interactive full-screen lightbox.
+     - **Contact Representative Modal (`ContactAgentModal`)**: Interactive thumbnail strip + cover preview while calling, messaging on WhatsApp, or sending an enquiry.
+     - **Schedule Viewing Modal (`ViewingRequestModal`)**: Interactive 4-photo preview strip while booking a viewing.
+
+2. **Storage & Database Flow (`src/services/storageService.ts`)**
+   - Bucket: `property-images`
+   - Object path format: `properties/{propertyId}/{uuid}.{ext}`
+   - Database table: `public.property_images`
+     - `id` (`uuid`)
+     - `property_id` (`uuid`, references `public.properties(id)`)
+     - `storage_path` (`text`)
+     - `image_url` (`text`)
+     - `alt_text` (`text`, nullable)
+     - `sort_order` (`integer`, `0` to `3`)
+     - `is_cover` (`boolean`, `true` when `sort_order = 0`)
 
 ---
 
-## 3. Authentication & Roles (`Supabase Auth` + `public.profiles`)
+## 3. Backend Developer Action Items: Fixing "Permission Denied" on Listing & Photo Uploads
 
-### Authentication Service (`src/services/authService.ts`)
-- `signUp(input)` / `register(input)`: Creates an account in `auth.users` via `supabase.auth.signUp()` with metadata (`full_name`, `name`, `phone`, `role`, `company`) and synchronizes `public.profiles` (`id = auth.users.id`).
-- `signIn(input)` / `login(input)`: Authenticates with `supabase.auth.signInWithPassword()` and loads the authoritative profile from `public.profiles`.
-- `signOut()` / `logout()`: Terminates the session via `supabase.auth.signOut()` and clears user-scoped state.
-- `getCurrentSession()`, `getCurrentUser()`, `getCurrentProfile()`, `onAuthStateChange(listener)`, `requestPasswordReset(email)`.
+When a user tries to list a property or upload photos and receives **"You do not have permission to perform this task"**, it is caused by Row-Level Security (RLS) policies on Supabase Storage (`storage.objects`) and/or the PostgreSQL tables (`public.properties`, `public.property_images`, `public.profiles`).
 
-### Roles & Security
-- **Public Registration Roles (`PublicRegistrableRole`):** `buyer`, `owner`, `agent`, `developer`.
-- **Admin Restriction:** Public registration strictly blocks `admin` creation in the UI (`AuthModal.tsx`), in `authService.ts` (`sanitizePublicRole`), and via the PostgreSQL `on_auth_user_created` trigger.
-- **Authorization:** Frontend role checks (`currentUser.role === 'admin'`) are used solely for UX rendering and route guards (`<ProtectedRoute requiredRole="admin">`). Actual data authorization is enforced by PostgreSQL Row-Level Security (RLS).
+Ask the backend developer to run the following SQL in the **Supabase SQL Editor**:
 
----
+```sql
+-- ============================================================================
+-- 1. ENSURE STORAGE BUCKET `property-images` EXISTS AND IS PUBLIC FOR READING
+-- ============================================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'property-images',
+  'property-images',
+  true,
+  10485760, -- 10 MB
+  ARRAY['image/jpeg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO UPDATE
+SET public = true,
+    file_size_limit = 10485760,
+    allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp'];
 
-## 4. Public vs. Authenticated Features
+-- ============================================================================
+-- 2. STORAGE.OBJECTS RLS POLICIES FOR `property-images` BUCKET
+-- ============================================================================
+DROP POLICY IF EXISTS "Public read access for property-images" ON storage.objects;
+CREATE POLICY "Public read access for property-images"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'property-images');
 
-### Publicly Accessible (No Account Required)
-- Home page (`/`), Search & Map Explorer (`/search`), and Property Detail pages (`/properties/:slug`).
-- Viewing published property listings (`listing_status = 'published'`), photographs, pricing, Ugandan district/location details, verification badges, and features.
-- When no published properties match or exist in Supabase, a genuine empty state (`"No properties are currently available."`) is displayed.
+DROP POLICY IF EXISTS "Authenticated users can upload property images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload property images"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'property-images');
 
-### Protected Features (Requires Authenticated Supabase Session)
-- Saving/favoriting properties (`saved_properties`)
-- Submitting enquiries (`enquiries`) and contacting advertisers
-- Requesting property viewings (`viewing_requests`)
-- Creating, editing, and submitting property listings (`/list-property`, `/edit-property/:id`)
-- Viewing user dashboard (`/dashboard`)
-- Managing transaction stages (`transactions`)
-- Admin Operations Desk (`/admin`, restricted to `profile.role = 'admin'`)
+DROP POLICY IF EXISTS "Authenticated users can update own property images" ON storage.objects;
+CREATE POLICY "Authenticated users can update own property images"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'property-images' AND (owner = auth.uid() OR owner IS NULL));
 
-Unauthenticated visitors attempting any protected action are prompted with `"Create an account or sign in to continue."` via `AuthModal` and returned to their attempted action after signing in.
+DROP POLICY IF EXISTS "Authenticated users can delete own property images" ON storage.objects;
+CREATE POLICY "Authenticated users can delete own property images"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'property-images' AND (owner = auth.uid() OR owner IS NULL));
 
----
+-- ============================================================================
+-- 3. PUBLIC.PROPERTIES RLS POLICIES (ALLOW OWNERS TO INSERT, SELECT & UPDATE)
+-- ============================================================================
+-- Note: INSERT + .select() requires the creator to also pass the SELECT policy
+-- even when listing_status is 'draft' or 'pending'.
+DROP POLICY IF EXISTS "Public can view published properties or owners view own" ON public.properties;
+CREATE POLICY "Public can view published properties or owners view own"
+ON public.properties FOR SELECT
+TO public
+USING (
+  listing_status = 'published'
+  OR auth.uid() = owner_id
+  OR EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+  )
+);
 
-## 5. Database Tables & Workflows
+DROP POLICY IF EXISTS "Authenticated users can create own properties" ON public.properties;
+CREATE POLICY "Authenticated users can create own properties"
+ON public.properties FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = owner_id);
 
-### A. Property Workflow (`public.properties` & `public.property_verifications`)
-1. **Creation (`propertyService.createProperty`):**
-   - Authenticated advertiser submits the listing form.
-   - Creates a row in `public.properties` with `advertiser_id = auth.uid()`, `listing_status = 'pending'` (or `'draft'`), and `verification_status = 'pending'`.
-   - Returns the created property UUID (`property.id`).
-2. **Verification & Publication (`propertyService.updatePropertyVerification`):**
-   - Authorized admins inspect the listing in `/admin` (`advertiser_verified`, `location_confirmed`, `price_confirmed`, `availability_confirmed`).
-   - Updates `public.properties` (`verification_status`, `listing_status = 'published'`) and upserts the audit record in `public.property_verifications`.
+DROP POLICY IF EXISTS "Owners and admins can update properties" ON public.properties;
+CREATE POLICY "Owners and admins can update properties"
+ON public.properties FOR UPDATE
+TO authenticated
+USING (
+  auth.uid() = owner_id
+  OR EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+  )
+)
+WITH CHECK (
+  auth.uid() = owner_id
+  OR EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+  )
+);
 
-### B. Image Upload Workflow (`property-images` Bucket & `public.property_images`)
-1. **Local Selection:** Selecting files in `ListPropertyView` creates temporary browser previews (`URL.createObjectURL(file)`), which are revoked on removal, upload completion, or unmount. `blob:` URLs are never persisted.
-2. **Validation:** Accepts only `image/jpeg`, `image/png`, and `image/webp` up to **5 MB** per file.
-3. **Storage Upload (`storageService.uploadPropertyImage`):**
-   - Uploads to bucket `property-images` at path `properties/{propertyId}/{imageUuid}.{extension}` with `upsert: false`.
-   - Resolves the public URL via `getPublicUrl()` and inserts a row into `public.property_images` (`id`, `property_id`, `storage_path`, `public_url`, `sort_order`, `alt_text`).
-   - If the database insert fails, the uploaded Storage object is automatically removed.
+-- ============================================================================
+-- 4. PUBLIC.PROPERTY_IMAGES RLS POLICIES (UP TO 4 IMAGES PER PROPERTY)
+-- ============================================================================
+DROP POLICY IF EXISTS "Public can view property images" ON public.property_images;
+CREATE POLICY "Public can view property images"
+ON public.property_images FOR SELECT
+TO public
+USING (true);
 
-### C. Saved Properties Workflow (`public.saved_properties`)
-- `savedPropertyService` reads, upserts (`onConflict: 'user_id,property_id'`), and deletes rows in `public.saved_properties` (`user_id`, `property_id`, `created_at`).
+DROP POLICY IF EXISTS "Property owners can insert property images" ON public.property_images;
+CREATE POLICY "Property owners can insert property images"
+ON public.property_images FOR INSERT
+TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.properties p
+    WHERE p.id = property_images.property_id
+      AND (p.owner_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.profiles prof
+        WHERE prof.id = auth.uid() AND prof.role = 'admin'
+      ))
+  )
+);
 
-### D. Enquiry Workflow (`public.enquiries`)
-- `enquiryService.createEnquiry` looks up the property's `advertiser_id` as `assigned_rep_id` and inserts a row into `public.enquiries` (`id`, `property_id`, `customer_id`, `assigned_rep_id`, `customer_name`, `customer_phone`, `customer_email`, `subject`, `message`, `status`).
+DROP POLICY IF EXISTS "Property owners can update property images" ON public.property_images;
+CREATE POLICY "Property owners can update property images"
+ON public.property_images FOR UPDATE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.properties p
+    WHERE p.id = property_images.property_id
+      AND (p.owner_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.profiles prof
+        WHERE prof.id = auth.uid() AND prof.role = 'admin'
+      ))
+  )
+);
 
-### E. Viewing Request Workflow (`public.viewing_requests`)
-- `viewingService.createViewingRequest` looks up the property's `advertiser_id` as `assigned_agent_id` and inserts a row into `public.viewing_requests` (`id`, `property_id`, `customer_id`, `assigned_agent_id`, `customer_name`, `customer_phone`, `customer_email`, `preferred_date`, `preferred_time`, `message`, `status`).
+DROP POLICY IF EXISTS "Property owners can delete property images" ON public.property_images;
+CREATE POLICY "Property owners can delete property images"
+ON public.property_images FOR DELETE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.properties p
+    WHERE p.id = property_images.property_id
+      AND (p.owner_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.profiles prof
+        WHERE prof.id = auth.uid() AND prof.role = 'admin'
+      ))
+  )
+);
 
-### F. Transaction Workflow (`public.transactions`)
-- `transactionService` queries `public.transactions` and updates deal `stage` (`Enquiry`, `Contacted`, `Viewing`, `Negotiation`, `Offer`, `Closed`) while keeping commission and revenue calculations server/database-controlled.
-
----
-
-## 6. Deployment & Supabase Dashboard Checklist
-
-1. **Environment Variables:** Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are configured in your hosting environment.
-2. **Authentication URL Configuration:** In **Supabase Dashboard → Authentication → URL Configuration**, set your production **Site URL** and add `<your-domain>/**` to **Redirect URLs**.
-3. **Storage Bucket (`property-images`):** Ensure the `property-images` bucket exists with public read access (`public = true`) and RLS policies allowing authenticated uploads/deletes under `properties/{propertyId}/*`.
+-- ============================================================================
+-- 5. ALLOW USERS TO UPGRADE THEIR OWN PROFILE ROLE WHEN LISTING A PROPERTY
+-- ============================================================================
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile"
+ON public.profiles FOR UPDATE
+TO authenticated
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+```

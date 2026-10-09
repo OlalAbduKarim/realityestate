@@ -11,7 +11,8 @@ import {
   Building,
   Clock,
   ImageOff,
-  PhoneCall
+  PhoneCall,
+  Images
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -42,7 +43,12 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
     openContactAgentModal(property);
   };
 
-  const primaryImage = property.images?.[0] || '';
+  // Only the Main Image (index 0) is displayed on the listing card.
+  // Additional uploaded images (2-4) are shown in the Property Detail View and Contact Modal.
+  const validImages = Array.isArray(property.images) ? property.images.filter(Boolean) : [];
+  const primaryImage = validImages[0] || '';
+  const additionalPhotoCount = Math.max(0, validImages.length - 1);
+
   const advertiserName = property.advertiser?.name || 'Property Representative';
   const advertiserType = property.advertiser?.type || 'Agent';
 
@@ -51,7 +57,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
       onClick={handleCardClick}
       className="group bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/80 dark:border-stone-800 overflow-hidden hover:shadow-xl hover:shadow-stone-200/50 dark:hover:shadow-black/50 hover:border-stone-300 dark:hover:border-stone-700 transition-all duration-300 cursor-pointer flex flex-col h-full"
     >
-      {/* Image Container */}
+      {/* Main Image Container */}
       <div className="relative aspect-[4/3] overflow-hidden bg-stone-100 dark:bg-stone-800">
         {primaryImage ? (
           <img
@@ -110,7 +116,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
         </button>
 
         {/* Bottom Overlay Info */}
-        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-4 pt-12 flex items-end justify-between">
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent p-4 pt-12 flex items-end justify-between gap-2">
           <div className="text-white">
             <p className="text-lg font-bold tracking-tight">
               {formatPriceDisplay(
@@ -121,9 +127,20 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
               )}
             </p>
           </div>
-          <span className="px-2 py-0.5 rounded bg-white/20 backdrop-blur-md text-white text-xs font-medium">
-            {property.propertyType}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {additionalPhotoCount > 0 && (
+              <span
+                className="px-2 py-0.5 rounded bg-black/55 backdrop-blur-md text-white text-[11px] font-medium inline-flex items-center gap-1"
+                title={`Main photo shown • +${additionalPhotoCount} more photo(s) in details & contact`}
+              >
+                <Images className="w-3 h-3 text-emerald-300" />
+                <span>+{additionalPhotoCount} more</span>
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded bg-white/20 backdrop-blur-md text-white text-xs font-medium">
+              {property.propertyType}
+            </span>
+          </div>
         </div>
       </div>
 

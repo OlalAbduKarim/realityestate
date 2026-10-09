@@ -10,7 +10,8 @@ import {
   User as UserIcon,
   MessageSquare,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Images
 } from 'lucide-react';
 
 interface ViewingRequestModalProps {
@@ -38,6 +39,11 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+
+  const propertyPhotos = Array.isArray(property?.images)
+    ? property.images.filter(Boolean).slice(0, 4)
+    : [];
 
   useEffect(() => {
     if (isOpen) {
@@ -45,6 +51,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
       setPhone(currentUser?.phone || '+256 7');
       setValidationError(null);
       setIsSubmitting(false);
+      setActivePhotoIndex(0);
     }
   }, [isOpen, currentUser]);
 
@@ -81,7 +88,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
         propertyId: property.id,
         propertyTitle: property.title,
         propertyLocation: `${property.location}, ${property.district}`,
-        propertyImage: property.images?.[0] || '',
+        propertyImage: propertyPhotos[0] || '',
         propertyPrice: property.price,
         propertyTransaction: property.transaction,
         propertyPricePeriod: property.pricePeriod,
@@ -90,7 +97,9 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
         customerEmail: currentUser?.email,
         preferredDate,
         preferredTime,
-        message: message.trim() || 'Requesting on-site property inspection with representative.'
+        message:
+          message.trim() ||
+          'Requesting on-site property inspection with representative.'
       });
       setIsSubmitted(true);
     } catch (err) {
@@ -115,7 +124,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
     >
       <div
         className="bg-white dark:bg-stone-900 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-stone-100 dark:border-stone-800 relative animate-in zoom-in-95 max-h-[90vh] overflow-y-auto transition-colors"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={handleClose}
@@ -134,10 +143,22 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
               Viewing Request Submitted
             </h3>
             <p className="text-sm text-stone-600 dark:text-stone-300 mt-2 max-w-sm mx-auto leading-relaxed">
-              Your request for <strong className="text-stone-800 dark:text-stone-100">{property.title}</strong> on <strong className="text-stone-800 dark:text-stone-100">{preferredDate}</strong> ({preferredTime}) has been recorded.
+              Your request for{' '}
+              <strong className="text-stone-800 dark:text-stone-100">
+                {property.title}
+              </strong>{' '}
+              on{' '}
+              <strong className="text-stone-800 dark:text-stone-100">
+                {preferredDate}
+              </strong>{' '}
+              ({preferredTime}) has been recorded.
             </p>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-2">
-              Representative <span className="font-semibold text-stone-700 dark:text-stone-200">{property.advertiser?.name || 'Listing Representative'}</span> has been alerted to confirm access details.
+              Representative{' '}
+              <span className="font-semibold text-stone-700 dark:text-stone-200">
+                {property.advertiser?.name || 'Listing Representative'}
+              </span>{' '}
+              has been alerted to confirm access details.
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
@@ -162,7 +183,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
           </div>
         ) : (
           <div>
-            <div className="text-left mb-6">
+            <div className="text-left mb-4">
               <span className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">
                 Schedule On-Site Inspection
               </span>
@@ -173,6 +194,48 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                 {property.title} · {property.location}, {property.district}
               </p>
             </div>
+
+            {propertyPhotos.length > 0 && (
+              <div className="mb-5 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-950/60 p-2.5 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-stone-600 dark:text-stone-300">
+                  <span className="inline-flex items-center gap-1">
+                    <Images className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      Property Photos ({activePhotoIndex + 1} / {propertyPhotos.length})
+                    </span>
+                  </span>
+                </div>
+                <div className="aspect-[16/9] w-full rounded-lg overflow-hidden bg-stone-200 dark:bg-stone-800 relative">
+                  <img
+                    src={propertyPhotos[activePhotoIndex] || propertyPhotos[0]}
+                    alt={`${property.title} — Photo ${activePhotoIndex + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                {propertyPhotos.length > 1 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {propertyPhotos.map((imgUrl, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setActivePhotoIndex(idx)}
+                        className={`relative aspect-[4/3] rounded-md overflow-hidden border-2 transition-all cursor-pointer ${
+                          activePhotoIndex === idx
+                            ? 'border-emerald-600 dark:border-emerald-400'
+                            : 'border-transparent opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <img
+                          src={imgUrl}
+                          alt={`Thumbnail ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {validationError && (
               <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
@@ -192,7 +255,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                     type="text"
                     required
                     value={name}
-                    onChange={e => setName(e.target.value)}
+                    onChange={(e) => setName(e.target.value)}
                     placeholder="e.g. Ronald Kato"
                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
                   />
@@ -209,7 +272,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                     type="tel"
                     required
                     value={phone}
-                    onChange={e => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(e.target.value)}
                     placeholder="+256 772 000 000"
                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
                   />
@@ -228,7 +291,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                       required
                       min={new Date().toISOString().split('T')[0]}
                       value={preferredDate}
-                      onChange={e => setPreferredDate(e.target.value)}
+                      onChange={(e) => setPreferredDate(e.target.value)}
                       className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
                     />
                   </div>
@@ -242,13 +305,17 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                     <Clock className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
                     <select
                       value={preferredTime}
-                      onChange={e => setPreferredTime(e.target.value)}
+                      onChange={(e) => setPreferredTime(e.target.value)}
                       className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 bg-white dark:bg-stone-800 dark:text-stone-100"
                     >
                       <option value="09:00 AM – 10:30 AM">Morning (09:00 – 10:30)</option>
-                      <option value="10:30 AM – 12:00 PM">Late Morning (10:30 – 12:00)</option>
+                      <option value="10:30 AM – 12:00 PM">
+                        Late Morning (10:30 – 12:00)
+                      </option>
                       <option value="02:00 PM – 03:30 PM">Afternoon (02:00 – 03:30)</option>
-                      <option value="04:00 PM – 05:30 PM">Late Afternoon (04:00 – 05:30)</option>
+                      <option value="04:00 PM – 05:30 PM">
+                        Late Afternoon (04:00 – 05:30)
+                      </option>
                       <option value="Weekend Flexible">Weekend Flexible</option>
                     </select>
                   </div>
@@ -264,7 +331,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                   <textarea
                     rows={3}
                     value={message}
-                    onChange={e => setMessage(e.target.value)}
+                    onChange={(e) => setMessage(e.target.value)}
                     placeholder="e.g. Any details on water tanks, access road conditions, or security arrangements."
                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
                   />
@@ -280,7 +347,9 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                 disabled={isSubmitting}
                 className="w-full py-2.5 px-4 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white disabled:opacity-50 text-white dark:text-stone-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-xs"
               >
-                <span>{isSubmitting ? 'Submitting Request...' : 'Confirm Viewing Request'}</span>
+                <span>
+                  {isSubmitting ? 'Submitting Request...' : 'Confirm Viewing Request'}
+                </span>
               </button>
             </form>
           </div>

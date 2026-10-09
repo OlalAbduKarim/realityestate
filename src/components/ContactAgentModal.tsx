@@ -13,7 +13,10 @@ import {
   Clock,
   Sparkles,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  Images,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 
@@ -44,10 +47,14 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
   const advertiserName = property?.advertiser?.name || 'Property Representative';
   const advertiserPhone = property?.advertiser?.phone || '';
   const advertiserWhatsapp = property?.advertiser?.whatsapp || advertiserPhone;
+  const propertyPhotos = Array.isArray(property?.images)
+    ? property.images.filter(Boolean).slice(0, 4)
+    : [];
 
   useEffect(() => {
     if (isOpen && property) {
@@ -62,6 +69,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
       setSubmitted(false);
       setIsSubmitting(false);
       setErrorMessage(null);
+      setActivePhotoIndex(0);
     }
   }, [isOpen, property, currentUser, initialSubject, advertiserName]);
 
@@ -92,7 +100,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
       await addEnquiry({
         propertyId: property.id,
         propertyTitle: property.title,
-        propertyImage: property.images?.[0] || '',
+        propertyImage: propertyPhotos[0] || '',
         propertyPrice: property.price,
         propertyLocation: `${property.location}, ${property.district}`,
         customerName: customerName.trim(),
@@ -141,7 +149,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
     >
       <div
         className="bg-white dark:bg-stone-900 rounded-2xl max-w-xl w-full p-5 sm:p-7 shadow-2xl border border-stone-100 dark:border-stone-800 relative animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto text-left transition-colors"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
@@ -159,29 +167,48 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
             </div>
 
             <div>
-              <h3 id="contact-agent-modal-title" className="text-2xl font-serif font-bold text-stone-900 dark:text-white">
+              <h3
+                id="contact-agent-modal-title"
+                className="text-2xl font-serif font-bold text-stone-900 dark:text-white"
+              >
                 Message Sent to Agent
               </h3>
               <p className="text-xs text-stone-600 dark:text-stone-300 mt-2 max-w-md mx-auto leading-relaxed">
-                Your message regarding <strong className="text-stone-900 dark:text-white">"{property.title}"</strong> has been delivered to <strong className="text-emerald-700 dark:text-emerald-400">{advertiserName}</strong> ({property.advertiser?.agencyName || 'Listing Agent'}).
+                Your message regarding{' '}
+                <strong className="text-stone-900 dark:text-white">
+                  "{property.title}"
+                </strong>{' '}
+                has been delivered to{' '}
+                <strong className="text-emerald-700 dark:text-emerald-400">
+                  {advertiserName}
+                </strong>{' '}
+                ({property.advertiser?.agencyName || 'Listing Agent'}).
               </p>
             </div>
 
             <div className="bg-stone-50 dark:bg-stone-800/60 rounded-xl p-4 text-left border border-stone-200/70 dark:border-stone-700/60 text-xs space-y-1.5 max-w-md mx-auto">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">Subject:</span>
-                <span className="font-semibold text-stone-900 dark:text-stone-100 truncate ml-2">{subject}</span>
+                <span className="font-semibold text-stone-900 dark:text-stone-100 truncate ml-2">
+                  {subject}
+                </span>
               </div>
               {property.advertiser?.responseRate && (
                 <div className="flex justify-between">
-                  <span className="text-stone-500 dark:text-stone-400">Expected Response:</span>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{property.advertiser.responseRate}</span>
+                  <span className="text-stone-500 dark:text-stone-400">
+                    Expected Response:
+                  </span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                    {property.advertiser.responseRate}
+                  </span>
                 </div>
               )}
               {advertiserPhone && (
                 <div className="flex justify-between">
                   <span className="text-stone-500 dark:text-stone-400">Agent Phone:</span>
-                  <span className="font-mono text-stone-800 dark:text-stone-200">{advertiserPhone}</span>
+                  <span className="font-mono text-stone-800 dark:text-stone-200">
+                    {advertiserPhone}
+                  </span>
                 </div>
               )}
             </div>
@@ -213,13 +240,110 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 mb-1">
                 Direct Agent Inquiry
               </span>
-              <h3 id="contact-agent-modal-title" className="text-xl sm:text-2xl font-serif font-bold text-stone-900 dark:text-white">
-                Contact Agent
+              <h3
+                id="contact-agent-modal-title"
+                className="text-xl sm:text-2xl font-serif font-bold text-stone-900 dark:text-white"
+              >
+                Contact Representative
               </h3>
               <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 truncate">
-                Listing: {property.title}
+                Listing: {property.title} • {property.location}, {property.district}
               </p>
             </div>
+
+            {/* Property Photographs Preview (Shows Main Photo + Additional Uploaded Photos 2-4) */}
+            {propertyPhotos.length > 0 && (
+              <div className="mb-5 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-950/60 p-3 space-y-2.5">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-stone-600 dark:text-stone-300">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Images className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      Property Photographs ({activePhotoIndex + 1} of {propertyPhotos.length})
+                    </span>
+                  </span>
+                  {property.slug && property.id !== 'preview-temp' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        navigateTo(`/properties/${property.slug}`);
+                      }}
+                      className="text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      Open Full Listing Details →
+                    </button>
+                  )}
+                </div>
+
+                {/* Active Selected Photo */}
+                <div className="relative aspect-[16/9] w-full rounded-lg overflow-hidden bg-stone-200 dark:bg-stone-800">
+                  <img
+                    src={propertyPhotos[activePhotoIndex] || propertyPhotos[0]}
+                    alt={`${property.title} — Photo ${activePhotoIndex + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-stone-900/80 backdrop-blur-md text-white text-[10px] font-semibold">
+                    {activePhotoIndex === 0
+                      ? 'Main Listing Photo'
+                      : `Additional Photo ${activePhotoIndex + 1} of ${propertyPhotos.length}`}
+                  </span>
+
+                  {propertyPhotos.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActivePhotoIndex(
+                            (prev) => (prev - 1 + propertyPhotos.length) % propertyPhotos.length
+                          )
+                        }
+                        className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer"
+                        aria-label="Previous photo"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActivePhotoIndex((prev) => (prev + 1) % propertyPhotos.length)
+                        }
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer"
+                        aria-label="Next photo"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* All Uploaded Photos Thumbnail Strip (Main + Photos 2, 3, 4) */}
+                {propertyPhotos.length > 1 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {propertyPhotos.map((imgUrl, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setActivePhotoIndex(idx)}
+                        className={`relative aspect-[4/3] rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                          activePhotoIndex === idx
+                            ? 'border-emerald-600 dark:border-emerald-400 ring-1 ring-emerald-500/40'
+                            : 'border-transparent opacity-75 hover:opacity-100'
+                        }`}
+                      >
+                        <img
+                          src={imgUrl}
+                          alt={`${property.title} thumbnail ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute bottom-1 left-1 px-1.5 py-0.2 rounded bg-black/75 text-white text-[9px] font-semibold">
+                          {idx === 0 ? 'Main' : `#${idx + 1}`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {errorMessage && (
               <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
@@ -246,7 +370,11 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-stone-500 dark:text-stone-400 truncate">
-                    <span className="truncate">{property.advertiser?.agencyName || property.advertiser?.type || 'Representative'}</span>
+                    <span className="truncate">
+                      {property.advertiser?.agencyName ||
+                        property.advertiser?.type ||
+                        'Representative'}
+                    </span>
                     {property.advertiser?.responseRate && (
                       <>
                         <span>•</span>
@@ -270,7 +398,12 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                   </a>
                   {advertiserWhatsapp && (
                     <a
-                      href={`https://wa.me/${advertiserWhatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello ${advertiserName}, I am contacting you regarding "${property.title}" on Reality Estates.`)}`}
+                      href={`https://wa.me/${advertiserWhatsapp.replace(
+                        /[^0-9]/g,
+                        ''
+                      )}?text=${encodeURIComponent(
+                        `Hello ${advertiserName}, I am contacting you regarding "${property.title}" on Reality Estates.`
+                      )}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       title="Chat on WhatsApp"
@@ -286,7 +419,10 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="contact-agent-subject" className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                  <label
+                    htmlFor="contact-agent-subject"
+                    className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5"
+                  >
                     <span>Subject</span>
                     <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
                       <Sparkles className="w-3 h-3" /> Pre-filled with listing title
@@ -298,7 +434,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                   type="text"
                   required
                   value={subject}
-                  onChange={e => setSubject(e.target.value)}
+                  onChange={(e) => setSubject(e.target.value)}
                   placeholder="Subject"
                   className="w-full px-3.5 py-2.5 text-xs font-medium bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-stone-900 dark:text-white transition-colors"
                 />
@@ -306,7 +442,10 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="contact-agent-name" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                  <label
+                    htmlFor="contact-agent-name"
+                    className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1"
+                  >
                     Your Name <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
@@ -316,7 +455,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                       type="text"
                       required
                       value={customerName}
-                      onChange={e => setCustomerName(e.target.value)}
+                      onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="e.g. Ronald Mukasa"
                       className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-stone-900 dark:text-white transition-colors"
                     />
@@ -324,7 +463,10 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                 </div>
 
                 <div>
-                  <label htmlFor="contact-agent-phone" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                  <label
+                    htmlFor="contact-agent-phone"
+                    className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1"
+                  >
                     Phone / WhatsApp <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
@@ -334,7 +476,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                       type="tel"
                       required
                       value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
                       placeholder="+256 700 000 000"
                       className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-stone-900 dark:text-white transition-colors"
                     />
@@ -343,8 +485,12 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
               </div>
 
               <div>
-                <label htmlFor="contact-agent-email" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  Email Address <span className="text-stone-400 text-[10px] font-normal">(Optional)</span>
+                <label
+                  htmlFor="contact-agent-email"
+                  className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1"
+                >
+                  Email Address{' '}
+                  <span className="text-stone-400 text-[10px] font-normal">(Optional)</span>
                 </label>
                 <div className="relative">
                   <Mail className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-3 pointer-events-none" />
@@ -352,7 +498,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                     id="contact-agent-email"
                     type="email"
                     value={customerEmail}
-                    onChange={e => setCustomerEmail(e.target.value)}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
                     placeholder="name@example.com"
                     className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-stone-900 dark:text-white transition-colors"
                   />
@@ -364,7 +510,14 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                   I want to:
                 </label>
                 <div className="flex flex-wrap gap-1.5">
-                  {(['General Inquiry', 'Schedule Inspection', 'Price Negotiation', 'Availability Check'] as const).map(type => (
+                  {(
+                    [
+                      'General Inquiry',
+                      'Schedule Inspection',
+                      'Price Negotiation',
+                      'Availability Check'
+                    ] as const
+                  ).map((type) => (
                     <button
                       key={type}
                       type="button"
@@ -382,7 +535,10 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
               </div>
 
               <div>
-                <label htmlFor="contact-agent-message" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="contact-agent-message"
+                  className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Your Message to {advertiserName} <span className="text-rose-500">*</span>
                 </label>
                 <textarea
@@ -390,7 +546,7 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                   rows={4}
                   required
                   value={message}
-                  onChange={e => setMessage(e.target.value)}
+                  onChange={(e) => setMessage(e.target.value)}
                   className="w-full p-3 text-xs bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-stone-900 dark:text-white transition-colors leading-relaxed"
                 />
               </div>
@@ -400,7 +556,11 @@ export const ContactAgentModal: React.FC<ContactAgentModalProps> = ({
                   <span>Have an account? Sign in for one-click contact.</span>
                   <button
                     type="button"
-                    onClick={() => openAuthModal('Sign in to track your property inquiries and message history.')}
+                    onClick={() =>
+                      openAuthModal(
+                        'Sign in to track your property inquiries and message history.'
+                      )
+                    }
                     className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
                   >
                     Sign In

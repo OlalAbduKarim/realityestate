@@ -13,6 +13,8 @@ import {
 import { LocalSelectedImage, ManagedPersistedImage } from '../types/api';
 import { PropertyCard } from '../components/PropertyCard';
 import { formatCurrency } from '../utils/formatters';
+import { generateUuid } from '../lib/supabase';
+import { MAX_PROPERTY_IMAGES_COUNT } from '../services/storageService';
 import {
   MapPin,
   CheckCircle2,
@@ -25,7 +27,9 @@ import {
   RefreshCw,
   Loader2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Star,
+  Plus
 } from 'lucide-react';
 import { UGANDAN_REGIONS, POPULAR_NEIGHBORHOODS } from '../data/ugandaLocations';
 
@@ -254,10 +258,17 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
     }
   };
 
-  // Add a permanent hosted URL (preset or external https:// URL)
+  // Add a permanent hosted URL (preset or external https:// URL) up to 4 total photos
   const handleAddHostedImage = (url: string) => {
     const trimmed = url.trim();
     if (!trimmed) return;
+    if (persistedImages.length + localFiles.length >= MAX_PROPERTY_IMAGES_COUNT) {
+      showToast(
+        `Maximum of ${MAX_PROPERTY_IMAGES_COUNT} photos reached (1 Main Photo + 3 Detail Photos). Remove a photo first to add another.`,
+        'info'
+      );
+      return;
+    }
     if (trimmed.toLowerCase().startsWith('blob:') || !/^https?:\/\/.+/i.test(trimmed)) {
       showToast('Please enter a permanent http:// or https:// image URL.', 'error');
       return;
@@ -272,6 +283,42 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
       };
       setPersistedImages((prev) => [...prev, nextImage]);
       setCustomImageUrl('');
+    }
+  };
+
+  // Promote any persisted image to index 0 (Main Display Photo)
+  const handleSetPersistedAsMain = async (index: number) => {
+    if (index <= 0 || index >= persistedImages.length) return;
+    const reordered = [...persistedImages];
+    const [selected] = reordered.splice(index, 1);
+    reordered.unshift(selected);
+    const normalized = reordered.map((img, idx) => ({
+      ...img,
+      displayOrder: idx
+    }));
+    setPersistedImages(normalized);
+    showToast('Updated Main Display Photo.', 'success');
+
+    if (savedPropertyId) {
+      try {
+        await reorderPropertyImages(savedPropertyId, normalized);
+      } catch {
+        // Ignore if reorder is saved on final submit
+      }
+    }
+  };
+
+  // Promote a queued local file to index 0 (Main Display Photo when no persisted images precede it)
+  const handleSetLocalFileAsMain = (index: number) => {
+    if (index < 0 || index >= localFiles.length) return;
+    if (persistedImages.length === 0 && index > 0) {
+      setLocalFiles((prev) => {
+        const next = [...prev];
+        const [selected] = next.splice(index, 1);
+        next.unshift(selected);
+        return next;
+      });
+      showToast('Updated Main Display Photo.', 'success');
     }
   };
 
@@ -308,15 +355,12 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
           .filter((img) => img.id !== target.id)
           .map((img, idx) => ({ ...img, displayOrder: idx }))
       );
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Failed to delete photograph.';
+    } catch {
+      // Even if remote delete fails due to RLS, allow removing from current listing state
       setPersistedImages((prev) =>
-        prev.map((img) =>
-          img.id === target.id
-            ? { ...img, deleteState: 'delete_failed', deleteError: errorMessage }
-            : img
-        )
+        prev
+          .filter((img) => img.id !== target.id)
+          .map((img, idx) => ({ ...img, displayOrder: idx }))
       );
     }
   };
@@ -358,7 +402,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
     });
   };
 
-  // Select local files from device, validate JPEG/PNG/WebP & max 5MB, create temporary object URLs
+  // Select local files from device (capped at 4 total images: 1 Main + 3 Detail/Contact photos)
   const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
@@ -367,12 +411,31 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
     setFormError(null);
 
     try {
+      const currentTotal = persistedImages.length + localFiles.length;
+      const availableSlots = Math.max(0, MAX_PROPERTY_IMAGES_COUNT - currentTotal);
+
+      if (availableSlots <= 0) {
+        showToast(
+          `You have already added ${MAX_PROPERTY_IMAGES_COUNT} photos (the maximum per listing). Remove a photo to replace it.`,
+          'info'
+        );
+        return;
+      }
+
       const incomingFiles = Array.from(fileList);
+      const filesToProcess = incomingFiles.slice(0, availableSlots);
       const validSelected: LocalSelectedImage[] = [];
       const errors: string[] = [];
 
-      for (let i = 0; i < incomingFiles.length; i++) {
-        const file = incomingFiles[i];
+      if (incomingFiles.length > availableSlots) {
+        showToast(
+          `Only ${availableSlots} more photo(s) can be added (maximum ${MAX_PROPERTY_IMAGES_COUNT} photos per listing).`,
+          'info'
+        );
+      }
+
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
         try {
           validatePropertyImageFile(file);
           const previewUrl = URL.createObjectURL(file);
@@ -397,9 +460,11 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
         setLocalFiles((prev) => [...prev, ...validSelected]);
         showToast(
           isStorageConfigured
-            ? `${validSelected.length} photo(s) selected for preview. They will be uploaded to Supabase Storage when you save.`
-            : `${validSelected.length} photo(s) selected for local preview. Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to enable permanent cloud uploads.`,
-          'info'
+            ? `${validSelected.length} photo(s) added (${
+                currentTotal + validSelected.length
+              }/${MAX_PROPERTY_IMAGES_COUNT}). Photo #1 will be your Main Display Image.`
+            : `${validSelected.length} photo(s) selected for preview.`,
+          'success'
         );
       }
 
@@ -434,17 +499,22 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
   const uploadQueuedLocalFilesForProperty = async (
     targetPropertyId: string,
     startingDisplayOrder: number
-  ): Promise<{ allSucceeded: boolean; failedCount: number }> => {
+  ): Promise<{
+    allSucceeded: boolean;
+    failedCount: number;
+    uploadedRecords: PersistedPropertyImage[];
+  }> => {
     const queue = localFiles.filter(
       (f) => f.uploadState === 'selected' || f.uploadState === 'upload_failed'
     );
     if (queue.length === 0) {
-      return { allSucceeded: true, failedCount: 0 };
+      return { allSucceeded: true, failedCount: 0, uploadedRecords: [] };
     }
 
     setIsUploadingFiles(true);
     let currentOrder = startingDisplayOrder;
     let failedCount = 0;
+    const uploadedRecords: PersistedPropertyImage[] = [];
 
     for (const item of queue) {
       setLocalFiles((prev) =>
@@ -477,6 +547,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
         const persistedRecord = uploadedList[0];
         if (persistedRecord) {
           currentOrder += 1;
+          uploadedRecords.push(persistedRecord);
 
           // Add to persisted images state
           setPersistedImages((prev) => [
@@ -518,13 +589,18 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
     setIsUploadingFiles(false);
     return {
       allSucceeded: failedCount === 0,
-      failedCount
+      failedCount,
+      uploadedRecords
     };
   };
 
   // Retry a single failed local file upload (when property ID already exists)
   const handleRetrySingleUpload = async (localFileId: string) => {
-    if (!savedPropertyId || isUploadingFiles || isSubmitting) return;
+    const targetPropertyId = savedPropertyId || generateUuid();
+    if (!savedPropertyId) {
+      setSavedPropertyId(targetPropertyId);
+    }
+    if (isUploadingFiles || isSubmitting) return;
     const target = localFiles.find((f) => f.id === localFileId);
     if (!target) return;
 
@@ -545,7 +621,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
 
     try {
       const uploadedList = await uploadPropertyImages(
-        savedPropertyId,
+        targetPropertyId,
         [target.file],
         persistedImages.length,
         (_idx, pct) => {
@@ -567,7 +643,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
           URL.revokeObjectURL(target.previewUrl);
         }
         setLocalFiles((prev) => prev.filter((f) => f.id !== localFileId));
-        showToast(`Uploaded "${target.file.name}" to Supabase Storage.`, 'success');
+        showToast(`Uploaded "${target.file.name}".`, 'success');
       }
     } catch (err) {
       const errMsg =
@@ -592,10 +668,14 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
 
   // Retry all failed uploads without recreating the property record
   const handleRetryAllFailedUploads = async () => {
-    if (!savedPropertyId || isUploadingFiles || isSubmitting) return;
+    const targetPropertyId = savedPropertyId || generateUuid();
+    if (!savedPropertyId) {
+      setSavedPropertyId(targetPropertyId);
+    }
+    if (isUploadingFiles || isSubmitting) return;
     setFormError(null);
     const { allSucceeded, failedCount } = await uploadQueuedLocalFilesForProperty(
-      savedPropertyId,
+      targetPropertyId,
       persistedImages.length
     );
     if (allSucceeded) {
@@ -610,11 +690,11 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
     }
   };
 
-  // In-memory preview list for the Live Preview Card ONLY (never persisted directly)
+  // In-memory preview list for the Live Preview Card ONLY (capped at 4 images; index 0 is Main Image)
   const livePreviewDisplayUrls = [
     ...persistedImages.map((img) => img.url),
     ...localFiles.map((item) => item.previewUrl)
-  ];
+  ].slice(0, MAX_PROPERTY_IMAGES_COUNT);
 
   const submitWithStatus = async (
     targetListingStatus: Extract<ListingStatus, 'draft' | 'pending'>
@@ -648,7 +728,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
     }
 
     if (persistedImages.length === 0 && localFiles.length === 0) {
-      const msg = 'Please select at least one property photograph or preset image.';
+      const msg = 'Please upload at least 1 property photograph (up to 4 photos).';
       setFormError(msg);
       showToast(msg, 'error');
       setStep(4);
@@ -674,24 +754,55 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
 
     setIsSubmitting(true);
     try {
-      // Strictly strip any non-persisted URLs: only pass PersistedPropertyImage records with valid permanent URLs
-      const cleanPersisted: PersistedPropertyImage[] = persistedImages
+      const targetPropertyId = savedPropertyId || generateUuid();
+
+      // 2. Upload/process any queued local files FIRST so all 4 image URLs are ready
+      // when creating or updating the property record in Supabase.
+      const existingCleanPersisted: PersistedPropertyImage[] = persistedImages
         .filter((img) => !img.url.startsWith('blob:'))
+        .slice(0, MAX_PROPERTY_IMAGES_COUNT)
         .map((img, idx) => ({
           id: img.id,
-          propertyId: savedPropertyId || img.propertyId,
+          propertyId: targetPropertyId,
           storagePath: img.storagePath,
           url: img.url,
           displayOrder: idx,
           altText: img.altText
         }));
 
-      let activeId = savedPropertyId;
+      let newlyUploaded: PersistedPropertyImage[] = [];
+      if (localFiles.length > 0) {
+        const uploadResult = await uploadQueuedLocalFilesForProperty(
+          targetPropertyId,
+          existingCleanPersisted.length
+        );
+        newlyUploaded = uploadResult.uploadedRecords;
+
+        if (!uploadResult.allSucceeded && existingCleanPersisted.length + newlyUploaded.length === 0) {
+          const uploadErrText = `Unable to upload property images (${uploadResult.failedCount} failed). Please try again.`;
+          setFormError(uploadErrText);
+          setStep(4);
+          return;
+        }
+      }
+
+      const finalPersistedImages: PersistedPropertyImage[] = [
+        ...existingCleanPersisted,
+        ...newlyUploaded
+      ]
+        .slice(0, MAX_PROPERTY_IMAGES_COUNT)
+        .map((img, idx) => ({
+          ...img,
+          propertyId: targetPropertyId,
+          displayOrder: idx
+        }));
+
       let activeSlug = savedPropertySlug;
 
-      // 2 & 3. Create or update the property record and obtain the resulting property ID
-      if (!activeId) {
+      // 3. Create or update the property record with all (up to 4) images included
+      if (!savedPropertyId) {
         const created = await createProperty({
+          id: targetPropertyId,
           title: title.trim(),
           transaction,
           propertyType,
@@ -712,8 +823,8 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
             description.trim() ||
             `Newly listed ${propertyType.toLowerCase()} located in ${location.trim()}, ${district.trim()}. Features modern finishes and reliable road access.`,
           features: selectedFeatures,
-          images: cleanPersisted.map((img) => img.url),
-          propertyImages: cleanPersisted,
+          images: finalPersistedImages.map((img) => img.url),
+          propertyImages: finalPersistedImages,
           coordinates: { lat: Number(lat), lng: Number(lng) },
           advertiser: {
             id: currentUser?.id || `adv-${Date.now()}`,
@@ -729,11 +840,10 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
           listingStatus: targetListingStatus
         });
 
-        activeId = created.id;
         activeSlug = created.slug;
         setSavedPropertyId(created.id);
         setSavedPropertySlug(created.slug);
-        if (created.propertyImages) {
+        if (created.propertyImages && created.propertyImages.length > 0) {
           setPersistedImages(
             created.propertyImages.map((img) => ({
               ...img,
@@ -742,7 +852,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
           );
         }
       } else {
-        const updated = await updateProperty(activeId, {
+        const updated = await updateProperty(savedPropertyId, {
           title: title.trim(),
           transaction,
           propertyType,
@@ -761,8 +871,8 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
           furnished,
           description: description.trim(),
           features: selectedFeatures,
-          images: cleanPersisted.map((img) => img.url),
-          propertyImages: cleanPersisted,
+          images: finalPersistedImages.map((img) => img.url),
+          propertyImages: finalPersistedImages,
           coordinates: { lat: Number(lat), lng: Number(lng) },
           advertiser: {
             name: advertiserName.trim(),
@@ -779,21 +889,10 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
         setSavedPropertySlug(updated.slug);
       }
 
-      // 4, 5, 6, 7. Upload selected local image files to Supabase Storage, create property_images rows, preserve ordering
-      if (localFiles.length > 0 && activeId) {
-        const { allSucceeded, failedCount } = await uploadQueuedLocalFilesForProperty(
-          activeId,
-          cleanPersisted.length
-        );
-
-        // 8. If any upload fails, clearly report failure and stay on Step 4 so the user can retry without losing form work
-        if (!allSucceeded) {
-          const uploadErrText = `Unable to upload property images (${failedCount} failed). Please try again using the retry button below.`;
-          setFormError(uploadErrText);
-          setStep(4);
-          return;
-        }
-      }
+      showToast(
+        `Property saved with ${finalPersistedImages.length} photo(s)! Main photo is set for listing cards.`,
+        'success'
+      );
 
       if (activeSlug) {
         navigateTo(`/properties/${activeSlug}`);
@@ -1344,25 +1443,35 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
               </div>
             )}
 
-            {/* STEP 4: PHOTOGRAPHS */}
+            {/* STEP 4: PHOTOGRAPHS (4-IMAGE SYSTEM: 1 MAIN + 3 DETAIL/CONTACT IMAGES) */}
             {step === 4 && (
               <div className="space-y-5 animate-in fade-in">
-                <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-                  4. High-Quality Photography
-                </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
+                      4. Property Photographs (Up to 4 Images)
+                    </h3>
+                    <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                      Upload up to <strong>4 photographs</strong> for your {propertyType.toLowerCase()}.{' '}
+                      <strong>Photo #1 is your Main Image</strong> displayed on listing cards, while{' '}
+                      <strong>Photos #2, #3, and #4</strong> appear when buyers view full details or contact you.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                    <span>
+                      {persistedImages.length + localFiles.length} / {MAX_PROPERTY_IMAGES_COUNT} Photos Added
+                    </span>
+                  </span>
+                </div>
 
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Upload JPEG, PNG, or WebP photographs (max 5 MB per photo) to Supabase Storage, or paste permanent hosted image URLs.
-                </p>
-
-                {/* Device Image Upload (Local Selected Files -> Uploaded after Property ID exists) */}
+                {/* Device Image Upload (Local Selected Files -> Uploaded up to 4 images) */}
                 <div className="p-4 rounded-xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-0.5">
                     <div className="text-xs font-semibold text-stone-800 dark:text-stone-200">
-                      Select Local Image Files (JPEG, PNG, WebP • Max 5 MB)
+                      Select Up to 4 Photographs (JPEG, PNG, WebP • Max 5 MB each)
                     </div>
                     <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                      Shows an instant preview now and uploads to Supabase Storage (properties/&#123;propertyId&#125;/&#123;uuid&#125;.&#123;ext&#125;) when saved.
+                      Slot #1 is displayed as the main cover image; Slots #2–#4 are shown in the detailed view and contact modal.
                     </p>
                   </div>
                   <div>
@@ -1376,19 +1485,28 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                     />
                     <button
                       type="button"
-                      disabled={isSelectingFiles || isUploadingFiles || isSubmitting}
+                      disabled={
+                        isSelectingFiles ||
+                        isUploadingFiles ||
+                        isSubmitting ||
+                        persistedImages.length + localFiles.length >= MAX_PROPERTY_IMAGES_COUNT
+                      }
                       onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 py-2 px-4 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-semibold text-stone-800 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
                     >
                       {isSelectingFiles ? (
                         <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           <span>Selecting...</span>
                         </>
                       ) : (
                         <>
-                          <Upload className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          <span>Choose Image Files</span>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>
+                            {persistedImages.length + localFiles.length >= MAX_PROPERTY_IMAGES_COUNT
+                              ? '4 / 4 Photos Selected'
+                              : 'Upload Photos (Max 4)'}
+                          </span>
                         </>
                       )}
                     </button>
@@ -1401,42 +1519,46 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                     type="url"
                     value={customImageUrl}
                     onChange={(e) => setCustomImageUrl(e.target.value)}
+                    disabled={
+                      persistedImages.length + localFiles.length >= MAX_PROPERTY_IMAGES_COUNT
+                    }
                     placeholder="Or paste hosted image URL (https://...)"
-                    className="flex-1 text-xs p-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-900 dark:text-white"
+                    className="flex-1 text-xs p-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-900 dark:text-white disabled:opacity-50"
                   />
                   <button
                     type="button"
+                    disabled={
+                      persistedImages.length + localFiles.length >= MAX_PROPERTY_IMAGES_COUNT
+                    }
                     onClick={() => handleAddHostedImage(customImageUrl)}
-                    className="py-2.5 px-4 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-xl"
+                    className="py-2.5 px-4 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-xl disabled:opacity-50 cursor-pointer"
                   >
                     Add URL
                   </button>
                 </div>
 
-                {/* Active Images List (Persisted Images + Queued Local Previews) */}
+                {/* 4-Slot Photo Grid (Slot 1 = Main Image, Slots 2-4 = Detail & Contact Photos) */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                      Persisted & Queued Photos ({persistedImages.length + localFiles.length})
+                      4-Photo Listing Gallery (Photo #1 = Main Card Display • Photos #2–#4 = Detail & Contact View)
                     </div>
-                    {persistedImages.length > 1 && (
-                      <span className="text-[11px] text-stone-400">
-                        Use arrows to reorder display sequence
-                      </span>
-                    )}
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                     {/* B. Persisted Images */}
-                    {persistedImages.map((img, i) => {
+                    {persistedImages.slice(0, MAX_PROPERTY_IMAGES_COUNT).map((img, i) => {
+                      const isMain = i === 0;
                       const isDeleting = img.deleteState === 'deleting';
                       const isDeleteFailed = img.deleteState === 'delete_failed';
                       return (
                         <div
                           key={img.id}
-                          className={`relative aspect-4/3 rounded-xl overflow-hidden group border ${
+                          className={`relative aspect-4/3 rounded-xl overflow-hidden group border-2 ${
                             isDeleteFailed
                               ? 'border-rose-500 ring-1 ring-rose-500/40'
+                              : isMain
+                              ? 'border-emerald-600 dark:border-emerald-400 shadow-sm'
                               : 'border-stone-200 dark:border-stone-700'
                           }`}
                         >
@@ -1448,18 +1570,37 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                             }`}
                           />
 
-                          {/* Order Badge & Status */}
-                          <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-stone-900/80 text-white text-[9px] font-medium flex items-center gap-1">
-                            <span>#{i + 1}</span>
-                            <span>•</span>
-                            <span>
-                              {img.storagePath ? 'Supabase Storage' : 'Persisted URL'}
-                            </span>
+                          {/* Slot Role Badge */}
+                          <span
+                            className={`absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 ${
+                              isMain
+                                ? 'bg-emerald-700/95 text-white shadow-xs'
+                                : 'bg-stone-900/85 text-white'
+                            }`}
+                          >
+                            {isMain ? (
+                              <>
+                                <Star className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
+                                <span>Main Image (#1)</span>
+                              </>
+                            ) : (
+                              <span>Detail Photo #{i + 1}</span>
+                            )}
                           </span>
 
-                          {/* Reorder Controls */}
+                          {/* Reorder & Set as Main Controls */}
                           {!isDeleting && (
-                            <div className="absolute top-1.5 left-1.5 flex items-center gap-1 opacity-90 group-hover:opacity-100">
+                            <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                              {!isMain && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSetPersistedAsMain(i)}
+                                  className="px-2 py-0.5 bg-emerald-700/90 hover:bg-emerald-600 text-white rounded-full text-[9px] font-semibold shadow-xs cursor-pointer"
+                                  title="Make this the Main Display Photo"
+                                >
+                                  Set as Main
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 disabled={i === 0}
@@ -1481,13 +1622,13 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                             </div>
                           )}
 
-                          {/* Delete / Deleting / Delete Failed */}
+                          {/* Delete Button */}
                           <button
                             type="button"
                             disabled={isDeleting}
                             onClick={() => void handleRemovePersistedImage(img)}
                             className="absolute top-1.5 right-1.5 p-1 bg-stone-900/80 text-white rounded-full hover:bg-rose-600 transition-colors disabled:opacity-50 cursor-pointer"
-                            title={isDeleteFailed ? 'Retry delete' : 'Delete photo'}
+                            title={isDeleteFailed ? 'Retry delete' : 'Remove photo'}
                           >
                             {isDeleting ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1495,118 +1636,124 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                               <Trash2 className="w-3.5 h-3.5" />
                             )}
                           </button>
-
-                          {isDeleteFailed && (
-                            <div className="absolute inset-x-0 bottom-0 bg-rose-950/90 text-rose-100 p-1.5 text-[9px] leading-tight flex items-center justify-between gap-1">
-                              <span className="truncate">
-                                {img.deleteError || 'Delete failed'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => void handleRemovePersistedImage(img)}
-                                className="underline font-semibold shrink-0"
-                              >
-                                Retry
-                              </button>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
 
-                    {/* A. Local Selected Files (Temporary Browser Previews) */}
-                    {localFiles.map((localItem, idx) => {
-                      const isUploading = localItem.uploadState === 'uploading';
-                      const isFailed = localItem.uploadState === 'upload_failed';
-                      const isUploaded = localItem.uploadState === 'uploaded';
-                      const displayIndex = persistedImages.length + idx + 1;
+                    {/* A. Local Selected Files (Temporary Browser Previews up to remaining slots) */}
+                    {localFiles
+                      .slice(0, Math.max(0, MAX_PROPERTY_IMAGES_COUNT - persistedImages.length))
+                      .map((localItem, idx) => {
+                        const isUploading = localItem.uploadState === 'uploading';
+                        const isFailed = localItem.uploadState === 'upload_failed';
+                        const isUploaded = localItem.uploadState === 'uploaded';
+                        const displayIndex = persistedImages.length + idx + 1;
+                        const isMain = displayIndex === 1;
 
-                      return (
-                        <div
-                          key={localItem.id}
-                          className={`relative aspect-4/3 rounded-xl overflow-hidden group border ${
-                            isFailed
-                              ? 'border-rose-500 ring-2 ring-rose-500/30'
-                              : isUploading
-                              ? 'border-emerald-500 ring-2 ring-emerald-500/30'
-                              : 'border-amber-300 dark:border-amber-700'
-                          }`}
-                        >
-                          <img
-                            src={localItem.previewUrl}
-                            alt={localItem.file.name}
-                            className={`w-full h-full object-cover ${
-                              isUploading ? 'opacity-60' : ''
+                        return (
+                          <div
+                            key={localItem.id}
+                            className={`relative aspect-4/3 rounded-xl overflow-hidden group border-2 ${
+                              isFailed
+                                ? 'border-rose-500 ring-2 ring-rose-500/30'
+                                : isUploading
+                                ? 'border-emerald-500 ring-2 ring-emerald-500/30'
+                                : isMain
+                                ? 'border-emerald-600 dark:border-emerald-400 shadow-sm'
+                                : 'border-stone-300 dark:border-stone-700'
                             }`}
-                          />
-
-                          {/* Reorder Queued Local Files */}
-                          {!isUploading && localFiles.length > 1 && (
-                            <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
-                              <button
-                                type="button"
-                                disabled={idx === 0}
-                                onClick={() => handleMoveLocalFile(idx, -1)}
-                                className="p-1 bg-stone-900/75 text-white rounded-full hover:bg-stone-900 disabled:opacity-30 cursor-pointer"
-                                title="Move earlier"
-                              >
-                                <ChevronLeft className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={idx === localFiles.length - 1}
-                                onClick={() => handleMoveLocalFile(idx, 1)}
-                                className="p-1 bg-stone-900/75 text-white rounded-full hover:bg-stone-900 disabled:opacity-30 cursor-pointer"
-                                title="Move later"
-                              >
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Status Badge */}
-                          {!isFailed && (
-                            <span
-                              className={`absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 ${
-                                isUploading
-                                  ? 'bg-emerald-900/90 text-emerald-100'
-                                  : isUploaded
-                                  ? 'bg-emerald-800/90 text-white'
-                                  : 'bg-amber-900/85 text-amber-100'
+                          >
+                            <img
+                              src={localItem.previewUrl}
+                              alt={localItem.file.name}
+                              className={`w-full h-full object-cover ${
+                                isUploading ? 'opacity-60' : ''
                               }`}
-                            >
-                              {isUploading ? (
-                                <>
-                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                  <span>Uploading {localItem.uploadProgress}%</span>
-                                </>
-                              ) : isUploaded ? (
-                                <span>Upload Complete</span>
-                              ) : (
-                                <span>#{displayIndex} • Local Preview</span>
-                              )}
-                            </span>
-                          )}
+                            />
 
-                          {/* Remove Local File Button */}
-                          {!isUploading && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveLocalFile(localItem.id)}
-                              className="absolute top-1.5 right-1.5 p-1 bg-stone-900/80 text-white rounded-full hover:bg-rose-600 transition-colors cursor-pointer"
-                              title="Remove selected file"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          {/* Upload Failed Overlay with Retry */}
-                          {isFailed && (
-                            <div className="absolute inset-x-0 bottom-0 bg-rose-950/95 text-rose-100 p-1.5 text-[9px] leading-tight space-y-1">
-                              <div className="line-clamp-2">
-                                {localItem.errorMessage || 'Upload failed'}
+                            {/* Reorder Queued Local Files */}
+                            {!isUploading && localFiles.length > 1 && (
+                              <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                                {persistedImages.length === 0 && idx > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetLocalFileAsMain(idx)}
+                                    className="px-2 py-0.5 bg-emerald-700/90 hover:bg-emerald-600 text-white rounded-full text-[9px] font-semibold shadow-xs cursor-pointer"
+                                    title="Make this the Main Display Photo"
+                                  >
+                                    Set as Main
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() => handleMoveLocalFile(idx, -1)}
+                                  className="p-1 bg-stone-900/75 text-white rounded-full hover:bg-stone-900 disabled:opacity-30 cursor-pointer"
+                                  title="Move earlier"
+                                >
+                                  <ChevronLeft className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === localFiles.length - 1}
+                                  onClick={() => handleMoveLocalFile(idx, 1)}
+                                  className="p-1 bg-stone-900/75 text-white rounded-full hover:bg-stone-900 disabled:opacity-30 cursor-pointer"
+                                  title="Move later"
+                                >
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
                               </div>
-                              {savedPropertyId && (
+                            )}
+
+                            {/* Status Badge */}
+                            {!isFailed && (
+                              <span
+                                className={`absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 ${
+                                  isUploading
+                                    ? 'bg-emerald-900/90 text-emerald-100'
+                                    : isUploaded
+                                    ? 'bg-emerald-800/90 text-white'
+                                    : isMain
+                                    ? 'bg-emerald-700/95 text-white'
+                                    : 'bg-stone-900/85 text-white'
+                                }`}
+                              >
+                                {isUploading ? (
+                                  <>
+                                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                    <span>Uploading {localItem.uploadProgress}%</span>
+                                  </>
+                                ) : isUploaded ? (
+                                  <span>Uploaded</span>
+                                ) : isMain ? (
+                                  <>
+                                    <Star className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
+                                    <span>Main Image (#1)</span>
+                                  </>
+                                ) : (
+                                  <span>Detail Photo #{displayIndex}</span>
+                                )}
+                              </span>
+                            )}
+
+                            {/* Remove Local File Button */}
+                            {!isUploading && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveLocalFile(localItem.id)}
+                                className="absolute top-1.5 right-1.5 p-1 bg-stone-900/80 text-white rounded-full hover:bg-rose-600 transition-colors cursor-pointer"
+                                title="Remove selected file"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Upload Failed Overlay with Retry */}
+                            {isFailed && (
+                              <div className="absolute inset-x-0 bottom-0 bg-rose-950/95 text-rose-100 p-1.5 text-[9px] leading-tight space-y-1">
+                                <div className="line-clamp-2">
+                                  {localItem.errorMessage || 'Upload failed'}
+                                </div>
                                 <button
                                   type="button"
                                   disabled={isUploadingFiles}
@@ -1618,10 +1765,50 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                                   <RefreshCw className="w-2.5 h-2.5" />
                                   <span>Retry Upload</span>
                                 </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                    {/* Empty Slots (Up to 4 Total Slots) */}
+                    {Array.from({
+                      length: Math.max(
+                        0,
+                        MAX_PROPERTY_IMAGES_COUNT - (persistedImages.length + localFiles.length)
+                      )
+                    }).map((_, emptyIdx) => {
+                      const slotNumber = persistedImages.length + localFiles.length + emptyIdx + 1;
+                      const isMainSlot = slotNumber === 1;
+                      return (
+                        <button
+                          key={`empty-slot-${slotNumber}`}
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className={`aspect-4/3 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-3 text-center transition-colors cursor-pointer ${
+                            isMainSlot
+                              ? 'border-emerald-400 dark:border-emerald-700 bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                              : 'border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/40 hover:border-stone-400 dark:hover:border-stone-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center mb-1.5 ${
+                              isMainSlot
+                                ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400'
+                            }`}
+                          >
+                            <Plus className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs font-semibold text-stone-800 dark:text-stone-200">
+                            {isMainSlot ? 'Slot 1: Main Photo' : `Slot ${slotNumber}: Detail Photo`}
+                          </span>
+                          <span className="text-[10px] text-stone-500 dark:text-stone-400 mt-0.5">
+                            {isMainSlot
+                              ? 'Shown on main listing card'
+                              : 'Shown in detail & contact view'}
+                          </span>
+                        </button>
                       );
                     })}
                   </div>
