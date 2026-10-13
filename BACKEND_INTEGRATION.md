@@ -128,6 +128,21 @@ WITH CHECK (
 );
 
 -- ============================================================================
+-- 3B. ADMIN & OWNER PROPERTY DELETION POLICY
+-- ============================================================================
+DROP POLICY IF EXISTS "Admins and owners can delete properties" ON public.properties;
+CREATE POLICY "Admins and owners can delete properties"
+ON public.properties FOR DELETE
+TO authenticated
+USING (
+  auth.uid() = owner_id
+  OR EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+  )
+);
+
+-- ============================================================================
 -- 4. PUBLIC.PROPERTY_IMAGES RLS POLICIES (UP TO 4 IMAGES PER PROPERTY)
 -- ============================================================================
 DROP POLICY IF EXISTS "Public can view property images" ON public.property_images;
@@ -166,8 +181,8 @@ USING (
   )
 );
 
-DROP POLICY IF EXISTS "Property owners can delete property images" ON public.property_images;
-CREATE POLICY "Property owners can delete property images"
+DROP POLICY IF EXISTS "Property owners and admins can delete property images" ON public.property_images;
+CREATE POLICY "Property owners and admins can delete property images"
 ON public.property_images FOR DELETE
 TO authenticated
 USING (
@@ -182,7 +197,26 @@ USING (
 );
 
 -- ============================================================================
--- 5. ALLOW USERS TO UPGRADE THEIR OWN PROFILE ROLE WHEN LISTING A PROPERTY
+-- 5. STORAGE OBJECTS ADMIN DELETION POLICY
+-- ============================================================================
+DROP POLICY IF EXISTS "Admins and owners can delete storage images" ON storage.objects;
+CREATE POLICY "Admins and owners can delete storage images"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'property-images'
+  AND (
+    owner = auth.uid()
+    OR owner IS NULL
+    OR EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  )
+);
+
+-- ============================================================================
+-- 6. ALLOW USERS TO UPGRADE THEIR OWN PROFILE ROLE WHEN LISTING A PROPERTY
 -- ============================================================================
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
@@ -191,3 +225,27 @@ TO authenticated
 USING (auth.uid() = id)
 WITH CHECK (auth.uid() = id);
 ```
+
+---
+
+## 4. Email Confirmation & Password Reset Redirect URLs (Supabase Dashboard)
+
+To prevent confirmation and password reset links from opening blank pages:
+
+1. Open **Supabase Dashboard** → **Authentication** → **URL Configuration**.
+2. Set **Site URL**:
+   - Development: `http://localhost:3000`
+   - Production / Staging: `https://<your-domain>`
+3. In **Redirect URLs**, add the following explicit allowed patterns:
+   - `http://localhost:3000/auth/callback`
+   - `http://localhost:3000/auth/confirmed`
+   - `http://localhost:3000/**`
+   - `https://<your-domain>/auth/callback`
+   - `https://<your-domain>/auth/confirmed`
+   - `https://<your-domain>/**`
+4. In **Email Templates**:
+   - **Confirm signup**: Ensure the confirmation button/link points to `{{ .ConfirmationURL }}`.
+     The frontend registers users with `emailRedirectTo: `${origin}/auth/callback``.
+   - **Reset Password**: Ensure the link points to `{{ .ConfirmationURL }}`.
+     The frontend requests resets with `redirectTo: `${origin}/auth/callback?type=recovery``.
+

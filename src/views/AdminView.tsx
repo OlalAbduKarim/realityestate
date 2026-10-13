@@ -22,7 +22,10 @@ import {
   Check,
   DollarSign,
   Briefcase,
-  Lock
+  Lock,
+  Trash2,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 
 export const AdminView: React.FC = () => {
@@ -34,6 +37,7 @@ export const AdminView: React.FC = () => {
     viewingRequests,
     transactions,
     updatePropertyVerification,
+    deleteProperty,
     updateEnquiryStatus,
     updateViewingStatus,
     updateTransactionStage,
@@ -54,6 +58,32 @@ export const AdminView: React.FC = () => {
   } | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [isSavingAudit, setIsSavingAudit] = useState(false);
+
+  // Admin Property Deletion State
+  const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleConfirmDelete = async () => {
+    if (!propertyToDelete || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteProperty(propertyToDelete.id);
+      setPropertyToDelete(null);
+      if (selectedPropertyForAudit?.id === propertyToDelete.id) {
+        setSelectedPropertyForAudit(null);
+      }
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete listing. Please check permissions.'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Client-side UI guard (NOTE: Future backend must enforce admin RBAC independently on all API routes)
   if (!isAuthenticated || !currentUser || currentUser.role !== 'admin') {
@@ -413,16 +443,28 @@ export const AdminView: React.FC = () => {
                     <div className="flex items-center gap-2 self-end lg:self-center">
                       <button
                         onClick={() => navigateTo(`/properties/${property.slug}`)}
-                        className="px-3.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 flex items-center gap-1.5"
+                        className="px-3.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" /> Preview
                       </button>
                       <button
                         onClick={() => openAuditModal(property)}
-                        className="px-4 py-2 rounded-xl bg-emerald-900 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+                        className="px-4 py-2 rounded-xl bg-emerald-900 hover:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                       >
                         <ShieldCheck className="w-3.5 h-3.5" /> Inspect & Verify
                       </button>
+                      {currentUser?.role === 'admin' && (
+                        <button
+                          onClick={() => {
+                            setPropertyToDelete(property);
+                            setDeleteError(null);
+                          }}
+                          className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/40 text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/70 flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="Delete listing (Admin only)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -896,23 +938,157 @@ export const AdminView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-200 dark:border-stone-800">
+              <div className="flex items-center justify-between gap-3 pt-4 border-t border-stone-200 dark:border-stone-800">
                 <button
                   type="button"
-                  onClick={() => setSelectedPropertyForAudit(null)}
-                  className="px-4 py-2.5 rounded-xl text-sm font-semibold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
+                  onClick={() => {
+                    setPropertyToDelete(selectedPropertyForAudit);
+                    setDeleteError(null);
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/40 text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/70 flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  Cancel
+                  <Trash2 className="w-4 h-4" /> Delete Listing
                 </button>
-                <button
-                  type="button"
-                  disabled={isSavingAudit}
-                  onClick={handleSaveAudit}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-900 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold shadow-sm"
-                >
-                  {isSavingAudit ? 'Saving Audit...' : 'Save Verification Decision'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPropertyForAudit(null)}
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingAudit}
+                    onClick={handleSaveAudit}
+                    className="px-6 py-2.5 rounded-xl bg-emerald-900 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold shadow-sm cursor-pointer"
+                  >
+                    {isSavingAudit ? 'Saving Audit...' : 'Save Verification Decision'}
+                  </button>
+                </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE LISTING CONFIRMATION MODAL (ADMIN ONLY) */}
+      {propertyToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/75 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-stone-200 dark:border-stone-800 relative">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono text-stone-400">#{propertyToDelete.id}</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300">
+                    Admin Deletion
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold text-stone-900 dark:text-white mt-1">
+                  Permanently Delete Listing?
+                </h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                  This action is irreversible. Supabase Storage photos and records will be deleted.
+                </p>
+              </div>
+            </div>
+
+            {/* Property Details Card */}
+            <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/80 dark:border-stone-700/60 mb-5 flex items-center gap-3.5">
+              {propertyToDelete.images?.[0] ? (
+                <img
+                  src={propertyToDelete.images[0]}
+                  alt={propertyToDelete.title}
+                  className="w-18 h-16 rounded-xl object-cover shrink-0 bg-stone-200 dark:bg-stone-700"
+                />
+              ) : (
+                <div className="w-18 h-16 rounded-xl bg-stone-200 dark:bg-stone-700 flex items-center justify-center text-xs text-stone-400 shrink-0">
+                  No image
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h4 className="font-bold text-stone-900 dark:text-white text-sm truncate">
+                  {propertyToDelete.title}
+                </h4>
+                <p className="text-xs text-stone-500 dark:text-stone-400 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  {propertyToDelete.location}, {propertyToDelete.district}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] text-stone-600 dark:text-stone-400">
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                    {formatPriceDisplay(
+                      propertyToDelete.price,
+                      propertyToDelete.transaction,
+                      propertyToDelete.pricePeriod,
+                      propertyToDelete.currency
+                    )}
+                  </span>
+                  <span>•</span>
+                  <span>Status: <strong className="capitalize">{propertyToDelete.listingStatus}</strong></span>
+                  <span>•</span>
+                  <span>Check: <strong className="capitalize">{propertyToDelete.verificationStatus}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Safety & Permanent Impact Notice */}
+            <div className="p-3.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300 space-y-1.5 mb-5">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Permanent removal impact:
+              </p>
+              <ul className="list-disc list-inside text-[11px] space-y-1 text-rose-700 dark:text-rose-300/90 pl-1">
+                <li>All 4 property images will be removed from Supabase Storage (`property-images`).</li>
+                <li>The property and all related verification records will be removed from the database.</li>
+                <li>This listing will immediately disappear from search results and user dashboards.</li>
+              </ul>
+            </div>
+
+            {/* Error Message Banner */}
+            {deleteError && (
+              <div className="p-3 mb-4 rounded-xl bg-rose-100 dark:bg-rose-900/40 border border-rose-300 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 flex items-start gap-2">
+                <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Deletion Failed</p>
+                  <p className="mt-0.5">{deleteError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-200 dark:border-stone-800">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => {
+                  setPropertyToDelete(null);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting Listing & Photos...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Permanently Delete Listing</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

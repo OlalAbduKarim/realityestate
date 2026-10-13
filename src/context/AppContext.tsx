@@ -62,6 +62,7 @@ export interface AppContextType {
     password?: string
   ) => Promise<AuthSessionResponse>;
   requestPasswordReset: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshCurrentUser: () => Promise<User | null>;
 
@@ -103,6 +104,7 @@ export interface AppContextType {
     notes?: string,
     checklist?: VerificationChecklistUpdate
   ) => Promise<Property>;
+  deleteProperty: (propertyId: string) => Promise<void>;
 
   // Property Image Operations (Service Layer)
   validatePropertyImageFile: (file: File) => void;
@@ -158,7 +160,11 @@ export interface AppContextType {
 
   // Contact Agent Modal
   contactAgentProperty: Property | null;
-  openContactAgentModal: (property: Property) => void;
+  contactAgentDefaultTab: 'call' | 'whatsapp' | 'message';
+  openContactAgentModal: (
+    property: Property,
+    defaultTab?: 'call' | 'whatsapp' | 'message'
+  ) => void;
   closeContactAgentModal: () => void;
 
   // Toast Notifications
@@ -215,24 +221,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  // Navigation State
-  const [currentPath, setCurrentPath] = useState<string>(() => {
-    const hash = window.location.hash.replace('#', '');
-    return hash || '/';
-  });
+  // Navigation & Callback Route Resolution
+  const resolveCurrentAppPath = (): string => {
+    if (typeof window === 'undefined') return '/';
+    const pathname = window.location.pathname || '/';
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+
+    // Direct callback pathnames
+    if (pathname === '/auth/callback' || pathname === '/auth/confirmed') {
+      return pathname;
+    }
+
+    // Supabase auth redirect query params or hash fragments
+    if (
+      hash.includes('access_token=') ||
+      hash.includes('type=signup') ||
+      hash.includes('type=recovery') ||
+      hash.includes('type=email') ||
+      hash.includes('error_description=') ||
+      search.includes('code=') ||
+      search.includes('token_hash=') ||
+      search.includes('error=')
+    ) {
+      return '/auth/callback';
+    }
+
+    const cleanHash = hash.replace(/^#/, '');
+    if (cleanHash) {
+      if (cleanHash === '/auth/callback' || cleanHash === '/auth/confirmed') {
+        return cleanHash;
+      }
+      return cleanHash;
+    }
+
+    return pathname !== '/' ? pathname : '/';
+  };
+
+  const [currentPath, setCurrentPath] = useState<string>(resolveCurrentAppPath);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      setCurrentPath(hash || '/');
+    const handleUrlChange = () => {
+      setCurrentPath(resolveCurrentAppPath());
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
   }, []);
 
   const navigateTo = useCallback((path: string) => {
-    window.location.hash = path;
-    setCurrentPath(path);
+    if (path.startsWith('/auth/callback') || path.startsWith('/auth/confirmed')) {
+      if (window.location.pathname !== path) {
+        window.history.pushState(null, '', path);
+      }
+      setCurrentPath(path);
+    } else {
+      window.location.hash = path;
+      setCurrentPath(path);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
@@ -263,6 +312,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Contact Agent Modal State
   const [contactAgentProperty, setContactAgentProperty] = useState<Property | null>(null);
+  const [contactAgentDefaultTab, setContactAgentDefaultTab] = useState<'call' | 'whatsapp' | 'message'>('message');
 
   // Filters State
   const [filters, setFiltersState] = useState<FilterState>(DEFAULT_FILTERS);
@@ -853,6 +903,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [authStatus, currentUser, showToast]
   );
 
+  const deleteProperty = useCallback(
+    async (propertyId: string): Promise<void> => {
+      if (
+        authStatus !== 'authenticated' ||
+        !currentUser ||
+        currentUser.role !== 'admin'
+      ) {
+        throw new ServiceError(
+          'Only verified administrators are authorized to delete property listings.',
+          'FORBIDDEN',
+          403
+        );
+      }
+
+      try {
+        setServiceError(null);
+        await propertyService.deleteProperty(propertyId, currentUser);
+        setProperties((prev) => prev.filter((p) => p.id !== propertyId));
+        showToast('Property listing permanently deleted.', 'success');
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to delete property listing.'
+        );
+        setServiceError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [authStatus, currentUser, showToast]
+  );
+
   // Viewing Requests
   const addViewingRequest = useCallback(
     async (req: CreateViewingRequestInput): Promise<ViewingRequest> => {
@@ -1012,18 +1094,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setFiltersState(DEFAULT_FILTERS);
   }, []);
 
-  // Contact Agent Modal (Protected Action)
+  // Contact Agent Modal (Accessible for callers, messaging, and WhatsApp)
   const openContactAgentModal = useCallback(
-    (property: Property) => {
-      if (authStatus !== 'authenticated' || !currentUser) {
-        openAuthModal('Create an account or sign in to continue.', () => {
-          setContactAgentProperty(property);
-        });
-        return;
-      }
+    (
+      property: Property,
+      defaultTab: 'call' | 'whatsapp' | 'message' = 'message'
+    ) => {
       setContactAgentProperty(property);
+      setContactAgentDefaultTab(defaultTab);
     },
-    [authStatus, currentUser, openAuthModal]
+    []
   );
 
   const closeContactAgentModal = useCallback(() => {
@@ -1160,6 +1240,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [showToast]
   );
 
+  const updatePassword = useCallback(
+    async (password: string): Promise<void> => {
+      try {
+        setAuthError(null);
+        const updatedUser = await authService.updatePassword(password);
+        setCurrentUser(updatedUser);
+        setAuthStatus('authenticated');
+        showToast('Your password has been successfully updated.', 'success');
+      } catch (err) {
+        const msg = extractErrorMessage(
+          err,
+          'Unable to update password. Please try again.'
+        );
+        setAuthError(msg);
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
   const logout = useCallback(async () => {
     try {
       await authService.signOut();
@@ -1193,6 +1294,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         login,
         registerUser,
         requestPasswordReset,
+        updatePassword,
         logout,
         refreshCurrentUser,
         isDataLoading,
@@ -1221,6 +1323,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addProperty,
         submitPropertyForVerification,
         updatePropertyVerification,
+        deleteProperty,
         validatePropertyImageFile,
         uploadPropertyImages,
         removePropertyImage,
@@ -1240,6 +1343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setFilters,
         resetFilters,
         contactAgentProperty,
+        contactAgentDefaultTab,
         openContactAgentModal,
         closeContactAgentModal,
         toasts,

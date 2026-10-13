@@ -368,6 +368,7 @@ export interface IPropertyService {
     propertyId: string,
     orderedImages: PersistedPropertyImage[]
   ): Promise<Property>;
+  deleteProperty(propertyId: string, currentUser?: User | null): Promise<void>;
 }
 
 export interface ISavedPropertyService {
@@ -405,6 +406,9 @@ export interface IAuthService {
   getCurrentUser(): Promise<User | null>;
   getCurrentProfile(): Promise<User | null>;
   requestPasswordReset(email: string): Promise<void>;
+  updatePassword(newPassword: string): Promise<User>;
+  verifyEmailOtp?(tokenHash: string, type?: string): Promise<User>;
+  exchangeAuthCode?(code: string): Promise<User>;
   onAuthStateChange(
     callback: (event: string, user: User | null) => void
   ): () => void;

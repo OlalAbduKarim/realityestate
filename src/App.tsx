@@ -12,6 +12,7 @@ import { DashboardView } from './views/DashboardView';
 import { ListPropertyView } from './views/ListPropertyView';
 import { AdminView } from './views/AdminView';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AuthCallbackView } from './views/AuthCallbackView';
 import { getSupabaseDiagnostics } from './lib/supabase';
 import { CheckCircle2, Info, AlertCircle, X, Building2 } from 'lucide-react';
 
@@ -23,6 +24,7 @@ const AppContent: React.FC = () => {
     toasts,
     dismissToast,
     contactAgentProperty,
+    contactAgentDefaultTab,
     closeContactAgentModal
   } = useApp();
 
@@ -133,6 +135,14 @@ const AppContent: React.FC = () => {
         </ProtectedRoute>
       );
     }
+    if (
+      currentPath === '/auth/callback' ||
+      currentPath === '/auth/confirmed' ||
+      currentPath.startsWith('/auth/callback') ||
+      currentPath.startsWith('/auth/confirmed')
+    ) {
+      return <AuthCallbackView />;
+    }
 
     // Default fallback
     return <HomeView />;
@@ -163,6 +173,7 @@ const AppContent: React.FC = () => {
           property={contactAgentProperty}
           isOpen={!!contactAgentProperty}
           onClose={closeContactAgentModal}
+          defaultTab={contactAgentDefaultTab}
         />
       )}
 

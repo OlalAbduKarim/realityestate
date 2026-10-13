@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { PublicRegistrableRole } from '../types/api';
+import { PasswordInput } from './PasswordInput';
 import {
   X,
   ShieldCheck,
   Phone,
   Mail,
-  Lock,
   User as UserIcon,
   ArrowRight,
   AlertCircle,
@@ -40,6 +40,7 @@ export const AuthModal: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<PublicRegistrableRole>('buyer');
   const [formError, setFormError] = useState<string | null>(null);
   const [infoBanner, setInfoBanner] = useState<string | null>(null);
@@ -52,11 +53,30 @@ export const AuthModal: React.FC = () => {
     setInfoBanner(null);
   };
 
+  const switchMode = (newMode: 'login' | 'signup' | 'reset') => {
+    setMode(newMode);
+    resetFormMessages();
+    setPassword('');
+    setConfirmPassword('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
 
     resetFormMessages();
+
+    if (mode === 'signup') {
+      if (password.length < 6) {
+        setFormError('Please choose a password with at least 6 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setFormError('Passwords do not match. Please ensure both passwords are identical.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -90,6 +110,7 @@ export const AuthModal: React.FC = () => {
           );
           setMode('login');
           setPassword('');
+          setConfirmPassword('');
           return;
         }
 
@@ -171,10 +192,7 @@ export const AuthModal: React.FC = () => {
             <div className="grid grid-cols-2 p-1 bg-stone-100 dark:bg-stone-800 rounded-lg text-xs font-medium">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('login');
-                  resetFormMessages();
-                }}
+                onClick={() => switchMode('login')}
                 className={`py-2 rounded-md transition-all cursor-pointer ${
                   mode === 'login'
                     ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
@@ -185,10 +203,7 @@ export const AuthModal: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMode('signup');
-                  resetFormMessages();
-                }}
+                onClick={() => switchMode('signup')}
                 className={`py-2 rounded-md transition-all cursor-pointer ${
                   mode === 'signup'
                     ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-white shadow-xs'
@@ -279,44 +294,62 @@ export const AuthModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Password Input */}
-          {mode !== 'reset' && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-stone-700 dark:text-stone-300">
-                  Password
-                </label>
-                {mode === 'login' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('reset');
-                      resetFormMessages();
-                    }}
-                    className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    Forgot password?
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
-              </div>
-              {mode === 'signup' && (
-                <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
-                  Must be at least 6 characters.
-                </p>
-              )}
-            </div>
+          {/* Password Input (Login) */}
+          {mode === 'login' && (
+            <PasswordInput
+              id="auth-login-password"
+              name="password"
+              label="Password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              rightAction={
+                <button
+                  type="button"
+                  onClick={() => switchMode('reset')}
+                  className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              }
+            />
+          )}
+
+          {/* Password & Confirm Password (Sign Up) */}
+          {mode === 'signup' && (
+            <>
+              <PasswordInput
+                id="auth-signup-password"
+                name="password"
+                label="Password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                autoComplete="new-password"
+                hint="Must be at least 6 characters."
+              />
+              <PasswordInput
+                id="auth-signup-confirm-password"
+                name="confirmPassword"
+                label="Confirm Password"
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter your password"
+                autoComplete="new-password"
+                error={
+                  confirmPassword && password !== confirmPassword
+                    ? 'Passwords do not match'
+                    : undefined
+                }
+              />
+            </>
           )}
 
           {/* Submit CTA */}
@@ -354,10 +387,7 @@ export const AuthModal: React.FC = () => {
           {mode === 'reset' && (
             <button
               type="button"
-              onClick={() => {
-                setMode('login');
-                resetFormMessages();
-              }}
+              onClick={() => switchMode('login')}
               className="w-full py-2 text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               Back to Sign In

@@ -579,6 +579,10 @@ class AuthService implements IAuthService {
         email: trimmedEmail,
         password,
         options: {
+          emailRedirectTo:
+            typeof window !== 'undefined'
+              ? `${window.location.origin}/auth/callback`
+              : undefined,
           data: {
             full_name: trimmedName,
             name: trimmedName,
@@ -757,7 +761,9 @@ class AuthService implements IAuthService {
 
     try {
       const redirectTo =
-        typeof window !== 'undefined' ? window.location.origin : undefined;
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/auth/callback?type=recovery`
+          : undefined;
       const { error } = await client.auth.resetPasswordForEmail(trimmedEmail, {
         redirectTo
       });
@@ -771,6 +777,95 @@ class AuthService implements IAuthService {
       throw mapSupabaseAuthError(
         err,
         'Unable to send password reset email. Please try again.'
+      );
+    }
+  }
+
+  /**
+   * Updates the authenticated user's password (e.g. following password recovery).
+   */
+  public async updatePassword(newPassword: string): Promise<User> {
+    const client = getRequiredSupabaseClient();
+    const trimmed = (newPassword || '').trim();
+    if (trimmed.length < 6) {
+      throw new ServiceError(
+        'Please choose a new password with at least 6 characters.',
+        'WEAK_PASSWORD',
+        400,
+        { password: 'Password must be at least 6 characters.' }
+      );
+    }
+
+    try {
+      const { data, error } = await client.auth.updateUser({ password: trimmed });
+      if (error) {
+        throw mapSupabaseAuthError(error, 'Unable to update password. Please try again.');
+      }
+      if (!data.user) {
+        throw new ServiceError('User update could not be confirmed.', 'UNKNOWN_ERROR', 500);
+      }
+      return await this.syncProfileForAuthUser(data.user);
+    } catch (err) {
+      throw mapSupabaseAuthError(err, 'Unable to update password. Please try again.');
+    }
+  }
+
+  /**
+   * Verifies an email confirmation or recovery token (OTP token hash).
+   */
+  public async verifyEmailOtp(
+    tokenHash: string,
+    type: 'signup' | 'email' | 'recovery' = 'email'
+  ): Promise<User> {
+    const client = getRequiredSupabaseClient();
+    try {
+      const { data, error } = await client.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: type as 'signup' | 'email' | 'recovery'
+      });
+
+      if (error) {
+        throw mapSupabaseAuthError(
+          error,
+          'Email verification token is invalid or has expired.'
+        );
+      }
+
+      if (!data.user) {
+        throw new ServiceError(
+          'Email confirmation could not be verified. Please try again.',
+          'UNKNOWN_ERROR',
+          500
+        );
+      }
+
+      return await this.syncProfileForAuthUser(data.user);
+    } catch (err) {
+      throw mapSupabaseAuthError(
+        err,
+        'The confirmation link has expired or has already been used. Please sign in or request a new link.'
+      );
+    }
+  }
+
+  /**
+   * Exchanges an authorization code for an authenticated session (PKCE flow).
+   */
+  public async exchangeAuthCode(code: string): Promise<User> {
+    const client = getRequiredSupabaseClient();
+    try {
+      const { data, error } = await client.auth.exchangeCodeForSession(code);
+      if (error) {
+        throw mapSupabaseAuthError(error, 'Unable to exchange verification code.');
+      }
+      if (!data.user) {
+        throw new ServiceError('No active user returned after code exchange.', 'UNKNOWN_ERROR', 500);
+      }
+      return await this.syncProfileForAuthUser(data.user);
+    } catch (err) {
+      throw mapSupabaseAuthError(
+        err,
+        'The confirmation code is invalid or has expired. Please sign in or request a new link.'
       );
     }
   }

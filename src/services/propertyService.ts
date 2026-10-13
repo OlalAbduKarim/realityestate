@@ -25,7 +25,8 @@ import {
 } from '../types/property';
 import {
   generateUuid,
-  getRequiredSupabaseClient
+  getRequiredSupabaseClient,
+  PROPERTY_IMAGES_BUCKET
 } from '../lib/supabase';
 import {
   filterPermanentImageUrls,
@@ -1064,6 +1065,178 @@ class PropertyService implements IPropertyService {
       );
     }
   }
+
+  /**
+   * Deletes a property listing, safely cleaning up all associated property images
+   * from Supabase Storage and removing all database records.
+   *
+   * Security:
+   * - Enforces that the caller is authenticated.
+   * - Checks that the caller's profile role is 'admin' (or owner of the property).
+   * - Storage and database operations execute under the authenticated user's session,
+   *   relying on Supabase RLS policies on `public.properties`, `public.property_images`,
+   *   and `storage.objects`.
+   */
+  public async deleteProperty(
+    propertyId: string,
+    currentUser?: User | null
+  ): Promise<void> {
+    if (!propertyId || !propertyId.trim()) {
+      throw new ServiceError(
+        'Property ID is required for deletion.',
+        'VALIDATION_ERROR',
+        400
+      );
+    }
+
+    const client = getRequiredSupabaseClient();
+    const { data: sessionData } = await client.auth.getSession();
+    const authenticatedUserId = sessionData.session?.user?.id;
+
+    if (!authenticatedUserId) {
+      throw new ServiceError(
+        'Authentication required to delete properties.',
+        'UNAUTHORIZED',
+        401
+      );
+    }
+
+    // Verify role or ownership
+    let userRole = currentUser?.role;
+    let userId = currentUser?.id;
+    if (!userRole || userId !== authenticatedUserId) {
+      const { data: profile } = await client
+        .from('profiles')
+        .select('id, role')
+        .eq('id', authenticatedUserId)
+        .maybeSingle();
+      userRole = (profile?.role as UserRole) || 'buyer';
+      userId = profile?.id;
+    }
+
+    // 1. Fetch property details to verify existence, ownership, and collect image files
+    const { data: existingProp, error: fetchErr } = await client
+      .from('properties')
+      .select('id, owner_id')
+      .eq('id', propertyId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      throw mapSupabaseError(fetchErr, 'Unable to locate property for deletion.');
+    }
+
+    if (!existingProp) {
+      throw new ServiceError(
+        'Property not found or already deleted.',
+        'NOT_FOUND',
+        404
+      );
+    }
+
+    // Only admin or owner can delete
+    const isAdmin = userRole === 'admin';
+    const isOwner = existingProp.owner_id === authenticatedUserId;
+
+    if (!isAdmin && !isOwner) {
+      throw new ServiceError(
+        'You do not have permission to delete this listing. Only verified administrators can delete listings.',
+        'FORBIDDEN',
+        403
+      );
+    }
+
+    // 2. Fetch associated property images to clean up storage files
+    const { data: imageRows } = await client
+      .from('property_images')
+      .select('id, storage_path, image_url')
+      .eq('property_id', propertyId);
+
+    const storagePathsToDelete: string[] = [];
+    if (Array.isArray(imageRows)) {
+      for (const row of imageRows) {
+        if (row.storage_path) {
+          storagePathsToDelete.push(row.storage_path);
+        } else if (row.image_url) {
+          const rawUrl = String(row.image_url).trim();
+          if (rawUrl && !rawUrl.startsWith('data:')) {
+            const marker = `/${PROPERTY_IMAGES_BUCKET}/`;
+            const idx = rawUrl.indexOf(marker);
+            if (idx !== -1) {
+              storagePathsToDelete.push(rawUrl.slice(idx + marker.length));
+            } else if (rawUrl.includes(`properties/${propertyId}/`)) {
+              const pIdx = rawUrl.indexOf(`properties/${propertyId}/`);
+              storagePathsToDelete.push(rawUrl.slice(pIdx));
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Remove image files from Supabase Storage bucket
+    if (storagePathsToDelete.length > 0) {
+      try {
+        await client.storage.from(PROPERTY_IMAGES_BUCKET).remove(storagePathsToDelete);
+      } catch (storageErr) {
+        console.warn('[propertyService] Non-fatal image storage cleanup error:', storageErr);
+      }
+    }
+
+    // Attempt folder cleanup for properties/{propertyId}
+    try {
+      const { data: listedFolderFiles } = await client.storage
+        .from(PROPERTY_IMAGES_BUCKET)
+        .list(`properties/${propertyId}`);
+      if (Array.isArray(listedFolderFiles) && listedFolderFiles.length > 0) {
+        const remainingPaths = listedFolderFiles.map(
+          (f) => `properties/${propertyId}/${f.name}`
+        );
+        await client.storage.from(PROPERTY_IMAGES_BUCKET).remove(remainingPaths);
+      }
+    } catch {
+      // Non-fatal folder cleanup
+    }
+
+    // 4. Clean up relational child records before deleting the parent property
+    try {
+      await client.from('property_images').delete().eq('property_id', propertyId);
+    } catch {
+      // Handled by ON DELETE CASCADE if configured
+    }
+
+    try {
+      await client.from('property_verifications').delete().eq('property_id', propertyId);
+    } catch {}
+
+    try {
+      await client.from('saved_properties').delete().eq('property_id', propertyId);
+    } catch {}
+
+    try {
+      await client.from('enquiries').delete().eq('property_id', propertyId);
+    } catch {}
+
+    try {
+      await client.from('viewing_requests').delete().eq('property_id', propertyId);
+    } catch {}
+
+    // 5. Delete the parent property record
+    const { error: deleteError } = await client
+      .from('properties')
+      .delete()
+      .eq('id', propertyId);
+
+    if (deleteError) {
+      throw mapSupabaseError(
+        deleteError,
+        'Failed to delete property listing. Please ensure the database allows deletion.'
+      );
+    }
+  }
 }
 
 export const propertyService = new PropertyService();
+
+export const deleteProperty = (
+  propertyId: string,
+  currentUser?: User | null
+): Promise<void> => propertyService.deleteProperty(propertyId, currentUser);

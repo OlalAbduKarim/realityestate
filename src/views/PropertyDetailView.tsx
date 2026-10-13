@@ -153,13 +153,6 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
   };
 
   const openContactAgent = (tab: 'call' | 'whatsapp' | 'message') => {
-    if (!currentUser) {
-      openAuthModal('Create an account or sign in to continue.', () => {
-        setContactAgentDefaultTab(tab);
-        setIsContactAgentModalOpen(true);
-      });
-      return;
-    }
     setContactAgentDefaultTab(tab);
     setIsContactAgentModalOpen(true);
   };
