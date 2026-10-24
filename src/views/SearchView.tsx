@@ -197,25 +197,25 @@ export const SearchView: React.FC = () => {
                     filters.verification === 'verified_only' ? 'all' : 'verified_only'
                 })
               }
-              className={`flex items-center gap-1.5 px-3.5 py-2 border rounded-xl text-xs font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 border rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                 filters.verification === 'verified_only'
-                  ? 'border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300'
+                  ? 'border-amber-500 bg-amber-50 dark:bg-stone-900 text-stone-950 dark:text-amber-400 font-bold shadow-xs'
                   : 'border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800'
               }`}
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <ShieldCheck className="w-4 h-4 text-amber-500" />
               Verified Only
             </button>
 
             {/* Filter Drawer Button */}
             <button
               onClick={() => setIsFilterDrawerOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-sm font-medium text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-sm font-medium text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 shadow-sm cursor-pointer"
             >
-              <SlidersHorizontal className="w-4 h-4" />
+              <SlidersHorizontal className="w-4 h-4 text-amber-500" />
               <span>More Filters</span>
               {activeFilterCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-emerald-900 dark:bg-emerald-600 text-white text-xs flex items-center justify-center">
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-stone-950 font-bold text-xs flex items-center justify-center">
                   {activeFilterCount}
                 </span>
               )}
@@ -250,11 +250,11 @@ export const SearchView: React.FC = () => {
             </span>
 
             {filters.transaction !== 'all' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 border border-amber-300 dark:border-amber-600/40">
                 {filters.transaction === 'buy' ? 'For Sale' : 'For Rent'}
                 <button
                   onClick={() => setFilters({ transaction: 'all' })}
-                  className="hover:text-emerald-600"
+                  className="hover:text-amber-600 font-bold"
                 >
                   ×
                 </button>
@@ -262,11 +262,11 @@ export const SearchView: React.FC = () => {
             )}
 
             {filters.propertyType !== 'all' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 border border-amber-300 dark:border-amber-600/40">
                 Type: {filters.propertyType}
                 <button
                   onClick={() => setFilters({ propertyType: 'all' })}
-                  className="hover:text-emerald-600"
+                  className="hover:text-amber-600 font-bold"
                 >
                   ×
                 </button>
@@ -274,11 +274,11 @@ export const SearchView: React.FC = () => {
             )}
 
             {filters.district && filters.district !== 'All Districts' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 border border-amber-300 dark:border-amber-600/40">
                 District: {filters.district}
                 <button
                   onClick={() => setFilters({ district: 'All Districts' })}
-                  className="hover:text-emerald-600"
+                  className="hover:text-amber-600 font-bold"
                 >
                   ×
                 </button>
@@ -286,11 +286,11 @@ export const SearchView: React.FC = () => {
             )}
 
             {filters.location !== '' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 border border-amber-300 dark:border-amber-600/40">
                 Area: {filters.location}
                 <button
                   onClick={() => setFilters({ location: '' })}
-                  className="hover:text-emerald-600"
+                  className="hover:text-amber-600 font-bold"
                 >
                   ×
                 </button>
@@ -298,11 +298,11 @@ export const SearchView: React.FC = () => {
             )}
 
             {filters.bedrooms !== 'any' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 border border-amber-300 dark:border-amber-600/40">
                 {filters.bedrooms}+ Beds
                 <button
                   onClick={() => setFilters({ bedrooms: 'any' })}
-                  className="hover:text-emerald-600"
+                  className="hover:text-amber-600 font-bold"
                 >
                   ×
                 </button>
@@ -310,11 +310,11 @@ export const SearchView: React.FC = () => {
             )}
 
             {filters.verification === 'verified_only' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 border border-amber-300 dark:border-amber-600/40">
                 Verified Only
                 <button
                   onClick={() => setFilters({ verification: 'all' })}
-                  className="hover:text-emerald-600"
+                  className="hover:text-amber-600 font-bold"
                 >
                   ×
                 </button>
@@ -323,7 +323,7 @@ export const SearchView: React.FC = () => {
 
             <button
               onClick={resetFilters}
-              className="text-xs font-medium text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white underline ml-2"
+              className="text-xs font-medium text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white underline ml-2 cursor-pointer"
             >
               Clear all
             </button>
@@ -333,7 +333,7 @@ export const SearchView: React.FC = () => {
         {/* Results Grid, Loading State, Error State, or Empty State */}
         {isDataLoading ? (
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-16 text-center max-w-lg mx-auto my-12 shadow-sm">
-            <Loader2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400 animate-spin mx-auto mb-3" />
+            <Loader2 className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
             <p className="text-sm font-medium text-stone-600 dark:text-stone-400">
               Loading properties...
             </p>
@@ -349,7 +349,7 @@ export const SearchView: React.FC = () => {
             </p>
             <button
               onClick={() => void refreshProperties()}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm cursor-pointer"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl transition-colors shadow-xs cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
               Retry Loading
@@ -374,7 +374,7 @@ export const SearchView: React.FC = () => {
           /* Empty State */
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center max-w-lg mx-auto my-12 shadow-sm">
             <div className="w-16 h-16 bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <MapPin className="w-8 h-8" />
+              <MapPin className="w-8 h-8 text-amber-500" />
             </div>
             <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-2">
               {publishedProperties.length === 0
@@ -383,13 +383,13 @@ export const SearchView: React.FC = () => {
             </h3>
             <p className="text-stone-500 dark:text-stone-400 mb-8 leading-relaxed text-sm">
               {publishedProperties.length === 0
-                ? 'Check back soon or list your property to publish verified real estate on Reality Estates.'
+                ? 'Check back soon or list your property to publish verified real estate on TYGA ESTATES.'
                 : "We couldn't find any properties matching your exact criteria. Try broadening your location search or adjusting your price filters."}
             </p>
             {activeFilterCount > 0 ? (
               <button
                 onClick={resetFilters}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl transition-colors shadow-xs cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
                 Reset All Filters
@@ -397,7 +397,7 @@ export const SearchView: React.FC = () => {
             ) : (
               <button
                 onClick={() => navigateTo('/list-property')}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl transition-colors shadow-sm cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl transition-colors shadow-xs cursor-pointer"
               >
                 List a Property
               </button>

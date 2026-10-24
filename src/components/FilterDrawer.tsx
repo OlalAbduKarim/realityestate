@@ -96,7 +96,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
             <select
               value={filters.district || 'All Districts'}
               onChange={(e) => setFilters({ district: e.target.value })}
-              className="w-full px-3.5 py-2.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white rounded-xl text-sm focus:outline-none focus:border-emerald-800 dark:focus:border-emerald-500"
+              className="w-full px-3.5 py-2.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white rounded-xl text-sm focus:outline-none focus:border-amber-500 dark:focus:border-amber-400 focus:ring-1 focus:ring-amber-500"
             >
               <option value="All Districts">All Districts</option>
               {UGANDAN_REGIONS.map((region) => (
@@ -122,9 +122,9 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                   key={type}
                   type="button"
                   onClick={() => setFilters({ propertyType: type })}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
+                  className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
                     filters.propertyType === type
-                      ? 'border-emerald-800 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300'
+                      ? 'border-amber-500 bg-amber-500 text-stone-950 font-bold shadow-xs'
                       : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:border-stone-300 dark:hover:border-stone-600'
                   }`}
                 >
@@ -154,7 +154,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                       minPrice: e.target.value ? Math.max(0, Number(e.target.value)) : 0
                     })
                   }
-                  className="w-full px-3.5 py-2.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white rounded-xl text-sm focus:outline-none focus:border-emerald-800 dark:focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white rounded-xl text-sm focus:outline-none focus:border-amber-500 dark:focus:border-amber-400 focus:ring-1 focus:ring-amber-500"
                 />
               </div>
               <div>
@@ -171,7 +171,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                       maxPrice: e.target.value ? Math.max(0, Number(e.target.value)) : 3000000000
                     })
                   }
-                  className="w-full px-3.5 py-2.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white rounded-xl text-sm focus:outline-none focus:border-emerald-800 dark:focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-white rounded-xl text-sm focus:outline-none focus:border-amber-500 dark:focus:border-amber-400 focus:ring-1 focus:ring-amber-500"
                 />
               </div>
             </div>
@@ -190,9 +190,9 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                       key={num}
                       type="button"
                       onClick={() => setFilters({ bedrooms: num })}
-                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
                         filters.bedrooms === num
-                          ? 'border-emerald-800 dark:border-emerald-600 bg-emerald-900 dark:bg-emerald-700 text-white'
+                          ? 'border-amber-500 bg-amber-500 text-stone-950 font-bold shadow-xs'
                           : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:border-stone-300 dark:hover:border-stone-600'
                       }`}
                     >
@@ -212,9 +212,9 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                       key={num}
                       type="button"
                       onClick={() => setFilters({ bathrooms: num })}
-                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
                         filters.bathrooms === num
-                          ? 'border-emerald-800 dark:border-emerald-600 bg-emerald-900 dark:bg-emerald-700 text-white'
+                          ? 'border-amber-500 bg-amber-500 text-stone-950 font-bold shadow-xs'
                           : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:border-stone-300 dark:hover:border-stone-600'
                       }`}
                     >
@@ -239,9 +239,9 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                     key={feat}
                     type="button"
                     onClick={() => toggleFeature(feat)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
                       active
-                        ? 'border-emerald-800 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300'
+                        ? 'border-amber-500 bg-amber-500 text-stone-950 font-bold shadow-xs'
                         : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:border-stone-300'
                     }`}
                   >
@@ -254,7 +254,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
 
           {/* Verified Listings Only Toggle */}
           <div className="pt-2">
-            <label className="flex items-start gap-3 p-4 rounded-2xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/40 cursor-pointer hover:border-emerald-700/40 transition-colors">
+            <label className="flex items-start gap-3 p-4 rounded-2xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/40 cursor-pointer hover:border-amber-500/40 transition-colors">
               <input
                 type="checkbox"
                 checked={filters.verification === 'verified_only'}
@@ -263,15 +263,15 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
                     verification: e.target.checked ? 'verified_only' : 'all'
                   })
                 }
-                className="mt-1 w-4 h-4 rounded border-stone-300 text-emerald-800 focus:ring-emerald-700"
+                className="mt-1 w-4 h-4 rounded border-stone-300 text-amber-500 focus:ring-amber-500 accent-amber-500"
               />
               <div className="flex-1">
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-stone-900 dark:text-white">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <ShieldCheck className="w-4 h-4 text-amber-500" />
                   Verified Listings Only
                 </div>
                 <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                  Show only properties that have completed Reality Estates' 4-point registry and field verification check.
+                  Show only properties that have completed TYGA ESTATES' 4-point registry and field verification check.
                 </p>
               </div>
             </label>
@@ -283,7 +283,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
           <button
             type="button"
             onClick={resetFilters}
-            className="flex items-center justify-center gap-2 px-4 py-3 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-3 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
             Reset
@@ -291,7 +291,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({ isOpen, onClose }) =
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-3 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl text-sm font-medium shadow-sm transition-colors"
+            className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-sm shadow-xs transition-colors cursor-pointer"
           >
             Apply Filters
           </button>

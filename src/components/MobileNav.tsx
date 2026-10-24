@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Home, Search, Heart, LayoutDashboard, UserCheck, Shield } from 'lucide-react';
+import { Home, Search, Heart, LayoutDashboard, UserCheck, Shield, Phone } from 'lucide-react';
 
 export const MobileNav: React.FC = () => {
   const { currentPath, navigateTo, currentUser, openAuthModal, savedPropertyIds } = useApp();
@@ -8,7 +8,7 @@ export const MobileNav: React.FC = () => {
   return (
     <nav 
       aria-label="Mobile Bottom Navigation" 
-      className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md border-t border-stone-200 dark:border-stone-800 py-1.5 px-3 shadow-lg transition-colors"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-[#0c0d0f]/95 backdrop-blur-md border-t border-stone-200 dark:border-stone-800 py-1.5 px-3 shadow-lg transition-colors"
     >
       <div className="flex items-center justify-around max-w-md mx-auto">
         
@@ -16,10 +16,10 @@ export const MobileNav: React.FC = () => {
         <button
           onClick={() => navigateTo('/')}
           className={`flex flex-col items-center justify-center py-1 px-2 min-w-[56px] transition-colors ${
-            currentPath === '/' ? 'text-stone-900 dark:text-white font-semibold' : 'text-stone-500 dark:text-stone-400'
+            currentPath === '/' ? 'text-stone-950 dark:text-white font-bold' : 'text-stone-500 dark:text-stone-400'
           }`}
         >
-          <Home className="w-5 h-5 mb-0.5" />
+          <Home className={`w-5 h-5 mb-0.5 ${currentPath === '/' ? 'text-amber-500' : ''}`} />
           <span className="text-[10px]">Home</span>
         </button>
 
@@ -27,10 +27,10 @@ export const MobileNav: React.FC = () => {
         <button
           onClick={() => navigateTo('/search')}
           className={`flex flex-col items-center justify-center py-1 px-2 min-w-[56px] transition-colors ${
-            currentPath.startsWith('/search') ? 'text-stone-900 dark:text-white font-semibold' : 'text-stone-500 dark:text-stone-400'
+            currentPath.startsWith('/search') ? 'text-stone-950 dark:text-white font-bold' : 'text-stone-500 dark:text-stone-400'
           }`}
         >
-          <Search className="w-5 h-5 mb-0.5" />
+          <Search className={`w-5 h-5 mb-0.5 ${currentPath.startsWith('/search') ? 'text-amber-500' : ''}`} />
           <span className="text-[10px]">Search</span>
         </button>
 
@@ -38,13 +38,13 @@ export const MobileNav: React.FC = () => {
         <button
           onClick={() => navigateTo('/dashboard')}
           className={`flex flex-col items-center justify-center py-1 px-2 min-w-[56px] relative transition-colors ${
-            currentPath === '/dashboard' ? 'text-stone-900 dark:text-white font-semibold' : 'text-stone-500 dark:text-stone-400'
+            currentPath === '/dashboard' ? 'text-stone-950 dark:text-white font-bold' : 'text-stone-500 dark:text-stone-400'
           }`}
         >
           <div className="relative">
-            <Heart className="w-5 h-5 mb-0.5" />
+            <Heart className={`w-5 h-5 mb-0.5 ${currentPath === '/dashboard' ? 'text-amber-500' : ''}`} />
             {savedPropertyIds.length > 0 && (
-              <span className="absolute -top-1 -right-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center tabular-nums">
+              <span className="absolute -top-1 -right-2 bg-amber-500 text-stone-950 text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center tabular-nums">
                 {savedPropertyIds.length}
               </span>
             )}
@@ -52,21 +52,15 @@ export const MobileNav: React.FC = () => {
           <span className="text-[10px]">Saved</span>
         </button>
 
-        {/* Dashboard */}
+        {/* Contact Us */}
         <button
-          onClick={() => {
-            if (currentUser) {
-              navigateTo('/dashboard');
-            } else {
-              openAuthModal('Sign in to manage viewing schedules and property enquiries.');
-            }
-          }}
+          onClick={() => navigateTo('/contact')}
           className={`flex flex-col items-center justify-center py-1 px-2 min-w-[56px] transition-colors ${
-            currentPath === '/dashboard' ? 'text-stone-900 dark:text-white font-semibold' : 'text-stone-500 dark:text-stone-400'
+            currentPath === '/contact' ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-stone-500 dark:text-stone-400'
           }`}
         >
-          <LayoutDashboard className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Dashboard</span>
+          <Phone className={`w-5 h-5 mb-0.5 ${currentPath === '/contact' ? 'text-amber-500' : ''}`} />
+          <span className="text-[10px]">Contact</span>
         </button>
 
         {/* Admin or Profile */}
@@ -74,10 +68,10 @@ export const MobileNav: React.FC = () => {
           <button
             onClick={() => navigateTo('/admin')}
             className={`flex flex-col items-center justify-center py-1 px-2 min-w-[56px] transition-colors ${
-              currentPath === '/admin' ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-emerald-600 dark:text-emerald-500'
+              currentPath === '/admin' ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-stone-600 dark:text-stone-400'
             }`}
           >
-            <Shield className="w-5 h-5 mb-0.5" />
+            <Shield className={`w-5 h-5 mb-0.5 ${currentPath === '/admin' ? 'text-amber-500' : ''}`} />
             <span className="text-[10px]">Admin</span>
           </button>
         ) : (

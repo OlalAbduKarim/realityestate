@@ -918,14 +918,14 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
       {/* Header Banner */}
       <div className="bg-stone-900 text-white rounded-2xl p-6 sm:p-8 relative overflow-hidden shadow-md">
         <div className="max-w-2xl relative z-10 space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Listing Portal for Owners, Agents & Developers</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight">
             {existingProperty
               ? `Edit Property: ${existingProperty.title}`
-              : 'List Your Property on Reality Estates'}
+              : 'List Your Property on TYGA ESTATES'}
           </h1>
           <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
             Reach thousands of serious verified buyers and tenants. Transparent inquiries, zero hidden portal charges, and on-site GPS verification before certification.
@@ -952,7 +952,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                 onClick={() => setStep(s.num)}
                 className={`flex items-center gap-2 text-xs font-semibold whitespace-nowrap px-2 py-1 rounded-md transition-colors ${
                   step === s.num
-                    ? 'text-emerald-600 dark:text-emerald-400 border-b-2 border-emerald-600 dark:border-emerald-400'
+                    ? 'text-amber-600 dark:text-amber-400 border-b-2 border-amber-500'
                     : step > s.num
                     ? 'text-stone-800 dark:text-stone-200'
                     : 'text-stone-400'
@@ -961,7 +961,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                 <span
                   className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
                     step === s.num
-                      ? 'bg-emerald-600 text-white'
+                      ? 'bg-amber-500 text-stone-950 font-bold'
                       : step > s.num
                       ? 'bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200'
                       : 'bg-stone-100 dark:bg-stone-800 text-stone-400'
@@ -1923,19 +1923,19 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                 </div>
 
                 {/* Verification agreement */}
-                <label className="flex items-start gap-3 p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 cursor-pointer">
+                <label className="flex items-start gap-3 p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={agreeVerification}
                     onChange={(e) => setAgreeVerification(e.target.checked)}
-                    className="rounded text-emerald-600 mt-0.5 focus:ring-0"
+                    className="rounded text-amber-500 mt-0.5 focus:ring-0 accent-amber-500"
                     required
                   />
                   <div className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
                     <strong className="text-stone-900 dark:text-white">
-                      Request Pearl Prime Verification:
+                      Request TYGA ESTATES Verification:
                     </strong>{' '}
-                    I confirm that I possess legal mandate to advertise this property. New submissions enter the verification queue (<code className="text-[11px]">pending</code>) until Reality Estates verification officers inspect boundary markers, verify land tenure records, and approve publication.
+                    I confirm that I possess legal mandate to advertise this property. New submissions enter the verification queue (<code className="text-[11px]">pending</code>) until TYGA ESTATES verification officers inspect boundary markers, verify land tenure records, and approve publication.
                   </div>
                 </label>
 
@@ -1943,7 +1943,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                   <button
                     type="button"
                     onClick={() => setStep(4)}
-                    className="flex items-center gap-2 py-2.5 px-4 text-stone-600 dark:text-stone-300 text-xs font-medium"
+                    className="flex items-center gap-2 py-2.5 px-4 text-stone-600 dark:text-stone-300 text-xs font-medium cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
@@ -1961,7 +1961,7 @@ export const ListPropertyView: React.FC<ListPropertyViewProps> = ({ editProperty
                     <button
                       type="submit"
                       disabled={isSubmitting || isUploadingFiles}
-                      className="py-3 px-6 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-md cursor-pointer transition-colors"
+                      className="py-3 px-6 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
                     >
                       {isUploadingFiles
                         ? 'Uploading Photos...'

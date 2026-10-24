@@ -23,7 +23,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requiredRole,
   title = 'Sign in to your account',
-  description = 'Please sign in or create a free account to access this section of Reality Estates.'
+  description = 'Please sign in or create a free account to access this section of TYGA ESTATES.'
 }) => {
   const { authStatus, currentUser, openAuthModal, navigateTo } = useApp();
 
@@ -88,7 +88,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             Admin Operations Desk
           </h1>
           <p className="text-sm text-stone-600 dark:text-stone-400 mb-6 leading-relaxed">
-            Access to property verification, field inspection audits, and transaction pipelines requires an authorized Reality Estates Admin account.
+            Access to property verification, field inspection audits, and transaction pipelines requires an authorized TYGA ESTATES Admin account.
           </p>
           <div className="flex justify-center">
             <button

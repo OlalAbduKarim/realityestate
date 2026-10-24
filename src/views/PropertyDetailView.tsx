@@ -24,6 +24,7 @@ import {
   MessageSquare,
   CheckCircle2,
   Building,
+  Building2,
   Sparkles,
   Scale,
   Check,
@@ -372,7 +373,7 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
 
               {property.landSizeDecimals !== undefined && (
                 <div className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-stone-200/80 dark:border-stone-800 flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
                     <Maximize className="w-5 h-5" />
                   </div>
                   <div>
@@ -428,7 +429,7 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
                       key={idx}
                       className="flex items-center gap-3 p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-800"
                     >
-                      <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                      <CheckCircle2 className="w-5 h-5 text-amber-500 shrink-0" />
                       <span className="text-stone-700 dark:text-stone-300 font-medium text-sm">
                         {feature}
                       </span>
@@ -442,79 +443,81 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({ slug }) 
             <PropertyInsights property={property} />
           </div>
 
-          {/* Right Column: Sticky Action & Agent Card */}
+          {/* Right Column: Sticky Action & TYGA ESTATES Concierge Card */}
           <div className="lg:col-span-1">
             <div className="sticky top-36 space-y-6">
-              {/* Primary Action Card */}
+              {/* Primary Action Card (20% Charcoal details + 10% Golden Yellow CTA) */}
               <div className="bg-white dark:bg-stone-900 p-6 rounded-2xl border border-stone-200/80 dark:border-stone-800 shadow-lg shadow-stone-200/40 dark:shadow-none">
                 <div className="flex items-center gap-4 pb-6 border-b border-stone-100 dark:border-stone-800 mb-6">
                   <div className="relative">
-                    <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 flex items-center justify-center font-bold text-xl">
-                      {advertiserName.charAt(0)}
+                    <div className="w-14 h-14 rounded-2xl bg-stone-950 border border-stone-800 text-amber-400 flex items-center justify-center font-bold text-xl shadow-inner">
+                      <Building2 className="w-7 h-7" />
                     </div>
-                    {isAdvertiserVerified && (
-                      <div
-                        className="absolute -bottom-1 -right-1 bg-white dark:bg-stone-900 rounded-full p-0.5"
-                        title="Verified Advertiser"
-                      >
-                        <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950" />
-                      </div>
-                    )}
+                    <div
+                      className="absolute -bottom-1 -right-1 bg-white dark:bg-stone-900 rounded-full p-0.5"
+                      title="Verified TYGA ESTATES Coordinator"
+                    >
+                      <ShieldCheck className="w-5 h-5 text-amber-500 fill-amber-100 dark:fill-amber-950" />
+                    </div>
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <h3 className="font-bold text-stone-900 dark:text-white text-base">
-                        {advertiserName}
+                      <h3 className="font-bold text-stone-900 dark:text-white text-base truncate">
+                        TYGA ESTATES Desk
                       </h3>
                     </div>
                     <p className="text-xs text-stone-500 dark:text-stone-400 font-medium flex items-center gap-1 mt-0.5">
-                      <Building className="w-3.5 h-3.5" />
-                      {advertiserType}
-                      {property.advertiser?.agencyName
-                        ? ` • ${property.advertiser.agencyName}`
-                        : ''}
+                      <span>Official Listing & Viewing Coordinator</span>
                     </p>
+                    <span className="inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                      Verified Safe Contact
+                    </span>
                   </div>
                 </div>
 
-                {/* Primary CTA: Schedule Viewing */}
+                {/* Primary CTA: Schedule Viewing (10% Golden Yellow) */}
                 <button
                   onClick={handleScheduleViewingClick}
-                  className="w-full py-4 px-6 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 shadow-md shadow-emerald-900/10 mb-3 text-base"
+                  className="w-full py-4 px-6 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-md shadow-amber-500/10 mb-3 text-base cursor-pointer active:scale-98"
                 >
-                  <Calendar className="w-5 h-5" />
-                  Schedule a Viewing
+                  <Calendar className="w-5 h-5 stroke-[2.5]" />
+                  <span>Schedule a Viewing</span>
                 </button>
 
-                <p className="text-center text-xs text-stone-400 dark:text-stone-500 mb-6">
-                  Free, no-obligation physical or virtual tour
+                <p className="text-center text-xs text-stone-400 dark:text-stone-500 mb-5">
+                  Free physical inspection coordinated by TYGA ESTATES
                 </p>
 
-                {/* Secondary Contact Actions */}
-                <div className="grid grid-cols-2 gap-3 pt-6 border-t border-stone-100 dark:border-stone-800">
+                {/* Secondary Contact Actions (Airtel & MTN Lines) */}
+                <div className="grid grid-cols-2 gap-3 pt-5 border-t border-stone-100 dark:border-stone-800">
                   <button
                     onClick={() => openContactAgent('call')}
-                    className="py-3 px-4 border border-stone-200 dark:border-stone-700 hover:border-stone-300 dark:hover:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                    className="py-3 px-3 border border-stone-200 dark:border-stone-700 hover:border-stone-300 dark:hover:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl font-medium text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Phone className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
-                    Call Agent
+                    <Phone className="w-4 h-4 text-amber-500" />
+                    <span>Direct Call</span>
                   </button>
                   <button
                     onClick={() => openContactAgent('whatsapp')}
-                    className="py-3 px-4 border border-stone-200 dark:border-stone-700 hover:border-stone-300 dark:hover:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                    className="py-3 px-3 bg-stone-900 hover:bg-stone-800 text-amber-400 border border-stone-700 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                   >
-                    <MessageSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    WhatsApp
+                    <MessageSquare className="w-4 h-4 text-amber-400" />
+                    <span>WhatsApp Us</span>
                   </button>
                 </div>
 
                 {/* Send Formal Enquiry Button */}
                 <button
                   onClick={() => openContactAgent('message')}
-                  className="w-full mt-3 py-2.5 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 rounded-xl font-medium text-xs transition-colors flex items-center justify-center gap-1.5"
+                  className="w-full mt-3 py-2.5 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 rounded-xl font-medium text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  Send Direct Enquiry Message
+                  Send Direct Inquiry to TYGA ESTATES
                 </button>
+
+                {/* Lister Info Protection Notice */}
+                <div className="mt-4 p-3 bg-stone-50 dark:bg-stone-800/50 rounded-xl border border-stone-200/70 dark:border-stone-700/60 text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                  Lister and owner contact records are confidential and managed under audited inspection agreements by TYGA ESTATES.
+                </div>
               </div>
             </div>
           </div>

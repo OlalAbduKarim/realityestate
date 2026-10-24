@@ -4,6 +4,7 @@ import { PropertyType } from '../types/property';
 import { SearchBar } from '../components/SearchBar';
 import { PropertyCard } from '../components/PropertyCard';
 import { InteractiveAreaMap } from '../components/InteractiveAreaMap';
+import { ServicesSection } from '../components/ServicesSection';
 import {
   Building2,
   Home,
@@ -146,11 +147,11 @@ export const HomeView: React.FC = () => {
   return (
     <div className="space-y-16 pb-16">
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28 border-b border-stone-200 dark:border-stone-800 bg-linear-to-b from-stone-100/60 to-transparent dark:from-stone-900/60 dark:to-transparent">
+      <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28 border-b border-stone-200 dark:border-stone-800 bg-linear-to-b from-stone-100/70 via-stone-50 to-transparent dark:from-stone-900/60 dark:to-transparent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center space-y-4 mb-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60">
-              <Sparkles className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-stone-100 text-stone-900 dark:bg-stone-900 dark:text-stone-100 border border-stone-200/90 dark:border-stone-800">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>Uganda's Transparent Real Estate Marketplace</span>
             </div>
 
@@ -179,7 +180,7 @@ export const HomeView: React.FC = () => {
               </div>
             </div>
             <div className="text-center p-3 rounded-lg bg-white/60 dark:bg-stone-800/40 backdrop-blur-xs border border-stone-200/60 dark:border-stone-800">
-              <div className="text-2xl font-serif font-bold text-emerald-600 dark:text-emerald-400">
+              <div className="text-2xl font-serif font-bold text-amber-500 dark:text-amber-400">
                 100%
               </div>
               <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
@@ -210,7 +211,7 @@ export const HomeView: React.FC = () => {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
           <div>
-            <div className="text-xs uppercase tracking-wider font-semibold text-emerald-600 dark:text-emerald-400 mb-1">
+            <div className="text-xs uppercase tracking-wider font-semibold text-amber-600 dark:text-amber-400 mb-1">
               Curated Selection
             </div>
             <h2 className="text-2xl sm:text-3xl font-serif font-bold text-stone-950 dark:text-white">
@@ -222,7 +223,7 @@ export const HomeView: React.FC = () => {
           </div>
           <button
             onClick={() => navigateTo('/search')}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors self-start sm:self-auto cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-400 transition-colors self-start sm:self-auto cursor-pointer"
           >
             <span>View all listings</span>
             <ArrowRight className="w-4 h-4" />
@@ -231,7 +232,7 @@ export const HomeView: React.FC = () => {
 
         {isDataLoading ? (
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center">
-            <Loader2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400 animate-spin mx-auto mb-3" />
+            <Loader2 className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
             <p className="text-sm font-medium text-stone-600 dark:text-stone-400">
               Loading properties...
             </p>
@@ -247,7 +248,7 @@ export const HomeView: React.FC = () => {
             </p>
             <button
               onClick={() => void refreshProperties()}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-bold transition-colors cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
               Retry Loading
@@ -266,7 +267,7 @@ export const HomeView: React.FC = () => {
               No properties are currently available.
             </h3>
             <p className="text-sm text-stone-500 dark:text-stone-400 mb-6 max-w-md mx-auto">
-              Published listings will appear here once approved by the Reality Estates verification team.
+              Published listings will appear here once approved by the TYGA ESTATES verification team.
             </p>
             <button
               onClick={() => navigateTo('/list-property')}
@@ -350,10 +351,10 @@ export const HomeView: React.FC = () => {
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
                     {loc.district}
                   </span>
-                  <h3 className="text-lg font-serif font-bold text-stone-950 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors mt-0.5">
+                  <h3 className="text-lg font-serif font-bold text-stone-950 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors mt-0.5">
                     {loc.name}
                   </h3>
                 </div>
@@ -369,34 +370,34 @@ export const HomeView: React.FC = () => {
         </div>
       </section>
 
-      {/* Verified Properties Spotlight */}
-      <section className="bg-stone-900 text-stone-100 py-16 dark:bg-stone-950 border-y border-stone-800">
+      {/* Verified Properties Spotlight (20% Charcoal structure) */}
+      <section className="bg-[#0f1115] text-stone-100 py-16 border-y border-stone-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-12">
             <div className="max-w-xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800 mb-3">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-stone-900 text-amber-400 border border-stone-800 mb-3">
+                <ShieldCheck className="w-4 h-4 text-amber-500" />
                 <span>Pearl Prime Verification Standard</span>
               </div>
               <h2 className="text-3xl font-serif font-bold text-white tracking-tight">
                 Buy & Rent with Certainty
               </h2>
               <p className="text-stone-400 text-sm mt-2 leading-relaxed">
-                Every verified badge on Reality Estates denotes an inspected property: cadastral coordinates checked, advertiser identity validated, and title registration history reviewed.
+                Every verified badge on TYGA ESTATES denotes an inspected property: cadastral coordinates checked, advertiser identity validated, and title registration history reviewed.
               </p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-              <div className="p-3 rounded-lg bg-stone-800/80 border border-stone-700/60 flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="p-3 rounded-lg bg-stone-900/90 border border-stone-800 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>On-Site GPS Survey</span>
               </div>
-              <div className="p-3 rounded-lg bg-stone-800/80 border border-stone-700/60 flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="p-3 rounded-lg bg-stone-900/90 border border-stone-800 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>ID & Mandate Check</span>
               </div>
-              <div className="p-3 rounded-lg bg-stone-800/80 border border-stone-700/60 flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="p-3 rounded-lg bg-stone-900/90 border border-stone-800 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>Direct Owner Access</span>
               </div>
             </div>
@@ -434,7 +435,7 @@ export const HomeView: React.FC = () => {
           </div>
           <button
             onClick={() => navigateTo('/search')}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer"
           >
             <span>Open search with split map</span>
             <ArrowRight className="w-4 h-4" />
@@ -449,30 +450,33 @@ export const HomeView: React.FC = () => {
         </div>
       </section>
 
-      {/* Why Use Reality Estates Section */}
+      {/* Full-Scope Estate Services Section (Ordered by importance) */}
+      <ServicesSection />
+
+      {/* Why Use TYGA ESTATES Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
         <div className="text-center max-w-2xl mx-auto mb-12">
           <div className="text-xs uppercase tracking-wider font-semibold text-stone-500 dark:text-stone-400 mb-1">
             Built for Ugandan Real Estate
           </div>
           <h2 className="text-2xl sm:text-3xl font-serif font-bold text-stone-950 dark:text-white">
-            Why Reality Estates?
+            Why TYGA ESTATES?
           </h2>
           <p className="text-sm text-stone-600 dark:text-stone-400 mt-2">
-            The safe, transparent, and modern way to navigate property transactions in East Africa.
+            The safe, transparent, and modern way to navigate property transactions in East Africa with official concierge inspection assistance.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="p-6 rounded-xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-4">
               <ShieldCheck className="w-6 h-6" />
             </div>
             <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
               Verified Listings
             </h3>
             <p className="text-xs text-stone-600 dark:text-stone-400 mt-2 leading-relaxed">
-              We physically verify boundaries, GPS locations, ownership mandates, and realistic market valuations to prevent ghost properties.
+              We physically verify boundaries, GPS coordinates, registry ownership mandates, and realistic market valuations to prevent ghost properties.
             </p>
           </div>
 
@@ -493,10 +497,10 @@ export const HomeView: React.FC = () => {
               <Building2 className="w-6 h-6" />
             </div>
             <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-              Direct Connections
+              Coordinated Viewings
             </h3>
             <p className="text-xs text-stone-600 dark:text-stone-400 mt-2 leading-relaxed">
-              Schedule direct on-site viewings and communicate directly with vetted agents, owners, and developers with zero middlemen markup.
+              All physical inspections are escorted by TYGA ESTATES officers. Reach our desk directly via Airtel or MTN for immediate appointment scheduling.
             </p>
           </div>
 
@@ -505,20 +509,20 @@ export const HomeView: React.FC = () => {
               <Layers className="w-6 h-6" />
             </div>
             <h3 className="text-base font-serif font-bold text-stone-900 dark:text-white">
-              Verified Documentation
+              Protected Due Diligence
             </h3>
             <p className="text-xs text-stone-600 dark:text-stone-400 mt-2 leading-relaxed">
-              Every listing undergoes rigorous verification of land tenure, cadastral map overlays, and verified advertiser credentials.
+              Every listing undergoes rigorous verification of land tenure, cadastral map overlays, and audited advertiser credentials.
             </p>
           </div>
         </div>
       </section>
 
-      {/* List Property Call to Action */}
+      {/* List Property Call to Action (20% Charcoal + 10% Golden Yellow) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="rounded-2xl p-8 sm:p-12 bg-linear-to-r from-stone-900 via-stone-800 to-stone-900 text-white relative overflow-hidden shadow-xl border border-stone-800">
+        <div className="rounded-2xl p-8 sm:p-12 bg-[#0f1115] text-white relative overflow-hidden shadow-xl border border-stone-800">
           <div className="max-w-2xl relative z-10 space-y-4">
-            <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+            <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
               For Property Owners, Agents & Developers
             </span>
             <h2 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight">
@@ -530,13 +534,19 @@ export const HomeView: React.FC = () => {
             <div className="pt-2 flex flex-wrap gap-4">
               <button
                 onClick={() => navigateTo('/list-property')}
-                className="py-3 px-6 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-semibold text-sm transition-colors shadow-md cursor-pointer"
+                className="py-3 px-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-sm transition-colors shadow-md cursor-pointer active:scale-98"
               >
                 List Your Property
               </button>
               <button
+                onClick={() => navigateTo('/contact')}
+                className="py-3 px-6 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 font-semibold text-sm transition-colors border border-stone-700 cursor-pointer"
+              >
+                Contact Concierge
+              </button>
+              <button
                 onClick={() => navigateTo('/search')}
-                className="py-3 px-6 rounded-lg bg-stone-800 hover:bg-stone-700 text-white font-medium text-sm transition-colors border border-stone-700 cursor-pointer"
+                className="py-3 px-6 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-medium text-sm transition-colors border border-stone-700 cursor-pointer"
               >
                 Browse Marketplace
               </button>

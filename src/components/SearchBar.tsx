@@ -78,7 +78,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
                     setShowLocations(true);
                   }}
                   onFocus={() => setShowLocations(true)}
-                  className="w-full pl-9 pr-4 py-2 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-xl text-sm text-stone-900 dark:text-white placeholder-stone-400 dark:placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-emerald-800/20 dark:focus:ring-emerald-500/20 focus:border-emerald-800 dark:focus:border-emerald-500 focus:bg-white dark:focus:bg-stone-900 transition-all"
+                  className="w-full pl-9 pr-4 py-2 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-xl text-sm text-stone-900 dark:text-white placeholder-stone-400 dark:placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:focus:ring-amber-400/20 focus:border-amber-500 dark:focus:border-amber-400 focus:bg-white dark:focus:bg-stone-900 transition-all"
                 />
               </div>
 
@@ -196,7 +196,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
                     propertyType: e.target.value as PropertyType | 'all'
                   })
                 }
-                className="w-full appearance-none pl-3.5 pr-8 py-2 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-xl text-sm text-stone-700 dark:text-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-800/20 dark:focus:ring-emerald-500/20 focus:border-emerald-800 dark:focus:border-emerald-500 focus:bg-white dark:focus:bg-stone-900"
+                className="w-full appearance-none pl-3.5 pr-8 py-2 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-xl text-sm text-stone-700 dark:text-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:focus:ring-amber-400/20 focus:border-amber-500 dark:focus:border-amber-400 focus:bg-white dark:focus:bg-stone-900"
               >
                 <option value="all">All Types</option>
                 <option value="House">Houses</option>
@@ -230,17 +230,17 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
   // Hero Variant
   return (
     <div className="w-full max-w-4xl mx-auto">
-      {/* Transaction Type Tabs */}
-      <div className="inline-flex bg-stone-900/60 backdrop-blur-md p-1.5 rounded-t-2xl border-t border-x border-white/15">
+      {/* Transaction Type Tabs (20% Charcoal structure) */}
+      <div className="inline-flex bg-[#0f1115] backdrop-blur-md p-1.5 rounded-t-2xl border-t border-x border-stone-800">
         {(['all', 'buy', 'rent'] as const).map((type) => (
           <button
             key={type}
             type="button"
             onClick={() => setFilters({ transaction: type })}
-            className={`px-6 py-2.5 text-sm font-medium rounded-xl transition-all ${
+            className={`px-6 py-2.5 text-sm font-semibold rounded-xl transition-all cursor-pointer ${
               filters.transaction === type
-                ? 'bg-white text-stone-900 shadow-sm'
-                : 'text-white/80 hover:text-white'
+                ? 'bg-white text-stone-950 shadow-sm'
+                : 'text-stone-300 hover:text-white'
             }`}
           >
             {type === 'all' ? 'All Properties' : type === 'buy' ? 'For Sale' : 'For Rent'}
@@ -251,7 +251,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
       {/* Main Search Box */}
       <form
         onSubmit={handleSearch}
-        className="bg-white dark:bg-stone-900 p-3 sm:p-4 rounded-2xl rounded-tl-none shadow-2xl shadow-stone-950/20 border border-stone-100 dark:border-stone-800 flex flex-col md:flex-row items-center gap-3 transition-colors duration-200"
+        className="bg-white dark:bg-stone-900 p-3 sm:p-4 rounded-2xl rounded-tl-none shadow-2xl shadow-stone-950/20 border border-stone-200/90 dark:border-stone-800 flex flex-col md:flex-row items-center gap-3 transition-colors duration-200"
       >
         {/* Location Field */}
         <div
@@ -305,7 +305,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
                   </div>
                   {UGANDAN_REGIONS.map((reg) => (
                     <div key={reg.name} className="px-4 py-1.5">
-                      <div className="text-xs font-bold text-emerald-800 dark:text-emerald-400 mb-1.5">
+                      <div className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-1.5">
                         {reg.name}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
@@ -317,7 +317,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
                               setFilters({ location: '', district: d });
                               setShowLocations(false);
                             }}
-                            className="text-xs px-2 py-1 bg-stone-100 dark:bg-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950 text-stone-700 dark:text-stone-300 rounded-md transition-colors"
+                            className="text-xs px-2 py-1 bg-stone-100 dark:bg-stone-800 hover:bg-amber-100 dark:hover:bg-amber-950 text-stone-700 dark:text-stone-300 hover:text-amber-900 dark:hover:text-amber-200 rounded-md transition-colors cursor-pointer"
                           >
                             {d}
                           </button>
@@ -448,12 +448,12 @@ export const SearchBar: React.FC<SearchBarProps> = ({ variant = 'hero', onOpenAd
           </div>
         </div>
 
-        {/* Submit Button */}
+        {/* Submit Button (10% Golden Yellow accent) */}
         <button
           type="submit"
-          className="w-full md:w-auto px-8 py-4 bg-emerald-900 hover:bg-emerald-800 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 shrink-0"
+          className="w-full md:w-auto px-8 py-4 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer active:scale-98"
         >
-          <Search className="w-5 h-5" />
+          <Search className="w-5 h-5 stroke-[2.5]" />
           <span>Search</span>
         </button>
       </form>

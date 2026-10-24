@@ -32,7 +32,7 @@ function mapTransactionError(err: unknown, fallbackMessage: string): ServiceErro
     lower.includes('load failed')
   ) {
     return new ServiceError(
-      'Reality Estates could not connect to the server. Please check your internet connection and try again.',
+      'TYGA ESTATES could not connect to the server. Please check your internet connection and try again.',
       'NETWORK_ERROR',
       503
     );

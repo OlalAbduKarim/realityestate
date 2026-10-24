@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Property } from '../types/property';
 import { useApp } from '../context/AppContext';
-import { isValidIsoDateString } from '../utils/formatters';
+import { isValidIsoDateString, formatCurrency } from '../utils/formatters';
 import {
   X,
   Calendar,
@@ -11,8 +11,17 @@ import {
   MessageSquare,
   CheckCircle2,
   AlertCircle,
-  Images
+  Images,
+  Building2,
+  ShieldCheck,
+  Send,
+  Loader2
 } from 'lucide-react';
+import {
+  TYGA_ESTATES_CONFIG,
+  getTygaEstatesWhatsAppUrl,
+  buildPropertyInquiryWhatsAppMessage
+} from '../config/company';
 
 interface ViewingRequestModalProps {
   property: Property;
@@ -29,6 +38,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
 
   const [name, setName] = useState(currentUser?.name || '');
   const [phone, setPhone] = useState(currentUser?.phone || '+256 7');
+  const [preferredNetwork, setPreferredNetwork] = useState<'Airtel' | 'MTN'>('Airtel');
   const [preferredDate, setPreferredDate] = useState(() => {
     const nextDay = new Date();
     nextDay.setDate(nextDay.getDate() + 2);
@@ -40,6 +50,9 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+
+  const { airtel, mtn } = TYGA_ESTATES_CONFIG.contacts;
+  const currentContact = preferredNetwork === 'Airtel' ? airtel : mtn;
 
   const propertyPhotos = Array.isArray(property?.images)
     ? property.images.filter(Boolean).slice(0, 4)
@@ -56,6 +69,8 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
   }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
+
+  const formattedPrice = formatCurrency(property.price, property.currency, true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +114,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
         preferredTime,
         message:
           message.trim() ||
-          'Requesting on-site property inspection with representative.'
+          `Requesting on-site property inspection with TYGA ESTATES team (Preferred line: ${preferredNetwork} - ${currentContact.displayNumber}).`
       });
       setIsSubmitted(true);
     } catch (err) {
@@ -117,6 +132,8 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
     onClose();
   };
 
+  const viewingWhatsAppMsg = `Hello TYGA ESTATES, I have submitted a viewing request for "${property.title}" in ${property.location} on ${preferredDate} (${preferredTime}). My name is ${name || 'Buyer'} and my contact is ${phone}. Please confirm the inspection walkthrough.`;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in"
@@ -128,22 +145,22 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
       >
         <button
           onClick={handleClose}
-          className="absolute top-5 right-5 p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
+          className="absolute top-5 right-5 p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors cursor-pointer"
           aria-label="Close modal"
         >
           <X className="w-5 h-5" />
         </button>
 
         {isSubmitted ? (
-          <div className="text-center py-6">
-            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="text-center py-6 space-y-4">
+            <div className="w-14 h-14 bg-amber-100 dark:bg-amber-950/60 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-2">
               <CheckCircle2 className="w-8 h-8" />
             </div>
             <h3 className="text-xl font-serif font-bold text-stone-900 dark:text-white">
-              Viewing Request Submitted
+              Viewing Request Recorded
             </h3>
-            <p className="text-sm text-stone-600 dark:text-stone-300 mt-2 max-w-sm mx-auto leading-relaxed">
-              Your request for{' '}
+            <p className="text-sm text-stone-600 dark:text-stone-300 max-w-sm mx-auto leading-relaxed">
+              Your walkthrough inspection request for{' '}
               <strong className="text-stone-800 dark:text-stone-100">
                 {property.title}
               </strong>{' '}
@@ -151,31 +168,59 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
               <strong className="text-stone-800 dark:text-stone-100">
                 {preferredDate}
               </strong>{' '}
-              ({preferredTime}) has been recorded.
-            </p>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-2">
-              Representative{' '}
-              <span className="font-semibold text-stone-700 dark:text-stone-200">
-                {property.advertiser?.name || 'Listing Representative'}
-              </span>{' '}
-              has been alerted to confirm access details.
+              ({preferredTime}) has been recorded by{' '}
+              <strong className="text-amber-500">
+                TYGA ESTATES
+              </strong>
+              .
             </p>
 
-            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+            <div className="p-3.5 bg-stone-50 dark:bg-stone-800/60 rounded-xl border border-stone-200/80 dark:border-stone-700/60 text-xs text-stone-600 dark:text-stone-300 text-left space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-stone-900 dark:text-white">
+                <ShieldCheck className="w-4 h-4 text-amber-500" />
+                <span>TYGA ESTATES Viewing Coordination</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Our verification officer will review property site access and contact you at <strong>{phone}</strong> to confirm the exact meeting point.
+              </p>
+            </div>
+
+            {/* Instant WhatsApp Confirmation */}
+            <div className="pt-2 flex flex-col sm:flex-row gap-2.5 justify-center">
+              <a
+                href={getTygaEstatesWhatsAppUrl(currentContact.whatsappNumber, viewingWhatsAppMsg)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs active:scale-98"
+              >
+                <MessageSquare className="w-4 h-4 stroke-[2.5]" />
+                <span>Confirm on {preferredNetwork} WhatsApp</span>
+              </a>
+
+              <a
+                href={`tel:${currentContact.rawNumber}`}
+                className="py-2.5 px-4 border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Phone className="w-4 h-4" />
+                <span>Call {currentContact.displayNumber}</span>
+              </a>
+            </div>
+
+            <div className="pt-4 flex flex-col sm:flex-row gap-2.5 justify-center">
               <button
                 type="button"
                 onClick={() => {
                   handleClose();
                   navigateTo('/dashboard');
                 }}
-                className="py-2.5 px-5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-lg hover:bg-stone-800 dark:hover:bg-white transition-colors"
+                className="py-2 px-5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-semibold rounded-lg hover:bg-stone-800 dark:hover:bg-white transition-colors cursor-pointer"
               >
                 Track in My Dashboard
               </button>
               <button
                 type="button"
                 onClick={handleClose}
-                className="py-2.5 px-4 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-xs font-semibold rounded-lg hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+                className="py-2 px-4 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-xs font-semibold rounded-lg hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors cursor-pointer"
               >
                 Continue Browsing
               </button>
@@ -184,17 +229,19 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
         ) : (
           <div>
             <div className="text-left mb-4">
-              <span className="text-[11px] font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">
-                Schedule On-Site Inspection
-              </span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 mb-1">
+                <Building2 className="w-3 h-3" />
+                TYGA ESTATES Walkthrough Inspection
+              </div>
               <h3 className="text-xl font-serif font-bold text-stone-900 dark:text-white tracking-tight mt-1">
-                Request a Viewing
+                Schedule a Viewing
               </h3>
               <p className="text-xs text-stone-600 dark:text-stone-400 mt-1 line-clamp-1">
                 {property.title} · {property.location}, {property.district}
               </p>
             </div>
 
+            {/* Photos Strip */}
             {propertyPhotos.length > 0 && (
               <div className="mb-5 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-950/60 p-2.5 space-y-2">
                 <div className="flex items-center justify-between text-[11px] font-semibold text-stone-600 dark:text-stone-300">
@@ -244,7 +291,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
                   Your Full Name
@@ -264,7 +311,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                  Contact Phone Number
+                  Contact Phone Number (Calls & WhatsApp)
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
@@ -273,9 +320,43 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+256 772 000 000"
+                    placeholder="+256 700 000 000"
                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
                   />
+                </div>
+              </div>
+
+              {/* Preferred TYGA ESTATES Contact Network */}
+              <div>
+                <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
+                  Preferred Network for Viewing Coordination:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreferredNetwork('Airtel')}
+                    className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      preferredNetwork === 'Airtel'
+                        ? 'border-red-600 bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 ring-1 ring-red-500'
+                        : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-red-600" />
+                    <span>Airtel: {airtel.displayNumber}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPreferredNetwork('MTN')}
+                    className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      preferredNetwork === 'MTN'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-500'
+                        : 'border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span>MTN: {mtn.displayNumber}</span>
+                  </button>
                 </div>
               </div>
 
@@ -309,13 +390,9 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
                       className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 bg-white dark:bg-stone-800 dark:text-stone-100"
                     >
                       <option value="09:00 AM – 10:30 AM">Morning (09:00 – 10:30)</option>
-                      <option value="10:30 AM – 12:00 PM">
-                        Late Morning (10:30 – 12:00)
-                      </option>
+                      <option value="10:30 AM – 12:00 PM">Late Morning (10:30 – 12:00)</option>
                       <option value="02:00 PM – 03:30 PM">Afternoon (02:00 – 03:30)</option>
-                      <option value="04:00 PM – 05:30 PM">
-                        Late Afternoon (04:00 – 05:30)
-                      </option>
+                      <option value="04:00 PM – 05:30 PM">Late Afternoon (04:00 – 05:30)</option>
                       <option value="Weekend Flexible">Weekend Flexible</option>
                     </select>
                   </div>
@@ -324,32 +401,40 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1">
-                  Notes or Questions for Representative (Optional)
+                  Notes or Questions for TYGA ESTATES (Optional)
                 </label>
                 <div className="relative">
                   <MessageSquare className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3" />
                   <textarea
-                    rows={3}
+                    rows={2}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="e.g. Any details on water tanks, access road conditions, or security arrangements."
+                    placeholder="e.g. Any inquiries on title status, boundary markers, or road access..."
                     className="w-full pl-9 pr-3 py-2 text-sm border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-hidden focus:border-stone-900 dark:focus:border-stone-100 dark:bg-stone-800 dark:text-stone-100"
                   />
                 </div>
               </div>
 
               <div className="p-3 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-200/60 dark:border-stone-700 text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
-                Viewing requests are confirmed directly by the property owner or registered agent. There are zero upfront viewing request booking fees on Reality Estates.
+                Viewing requests are securely coordinated by TYGA ESTATES field inspectors. Zero booking fees apply.
               </div>
 
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-2.5 px-4 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white disabled:opacity-50 text-white dark:text-stone-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-xs"
+                className="w-full py-3.5 px-4 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 active:scale-98"
               >
-                <span>
-                  {isSubmitting ? 'Submitting Request...' : 'Confirm Viewing Request'}
-                </span>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Submitting Request...</span>
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="w-4 h-4" />
+                    <span>Confirm Viewing Request with TYGA ESTATES</span>
+                  </>
+                )}
               </button>
             </form>
           </div>
@@ -358,3 +443,4 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
     </div>
   );
 };
+export default ViewingRequestModal;

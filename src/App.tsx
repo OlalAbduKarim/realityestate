@@ -13,6 +13,7 @@ import { ListPropertyView } from './views/ListPropertyView';
 import { AdminView } from './views/AdminView';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthCallbackView } from './views/AuthCallbackView';
+import { ContactUsView } from './views/ContactUsView';
 import { getSupabaseDiagnostics } from './lib/supabase';
 import { CheckCircle2, Info, AlertCircle, X, Building2 } from 'lucide-react';
 
@@ -40,7 +41,7 @@ const AppContent: React.FC = () => {
           </div>
           <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-2">
             <Building2 className="w-3.5 h-3.5" />
-            <span>Reality Estates</span>
+            <span>TYGA ESTATES</span>
           </div>
           <h1 className="text-2xl font-bold text-stone-900 dark:text-white mb-3">
             {diagnostics.isDev
@@ -49,7 +50,7 @@ const AppContent: React.FC = () => {
           </h1>
           <p className="text-sm text-stone-600 dark:text-stone-400 leading-relaxed mb-6">
             {configurationError ||
-              'Reality Estates could not connect to the server. Please check your configuration and try again.'}
+              'TYGA ESTATES could not connect to the server. Please check your configuration and try again.'}
           </p>
           <div className="text-left bg-stone-100 dark:bg-stone-950 rounded-xl p-4 border border-stone-200 dark:border-stone-800 text-xs font-mono text-stone-700 dark:text-stone-300 space-y-1.5">
             <div className="text-stone-500 dark:text-stone-400 font-sans font-semibold mb-1.5">
@@ -129,11 +130,14 @@ const AppContent: React.FC = () => {
         <ProtectedRoute
           requiredRole="admin"
           title="Create an account or sign in to continue."
-          description="Please sign in with an authorized Reality Estates Admin account to access verification and transaction pipelines."
+          description="Please sign in with an authorized TYGA ESTATES Admin account to access verification and transaction pipelines."
         >
           <AdminView />
         </ProtectedRoute>
       );
+    }
+    if (currentPath === '/contact' || currentPath.startsWith('/contact')) {
+      return <ContactUsView />;
     }
     if (
       currentPath === '/auth/callback' ||

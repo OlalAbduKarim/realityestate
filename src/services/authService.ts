@@ -115,7 +115,7 @@ function mapSupabaseAuthError(err: unknown, fallbackMessage: string): ServiceErr
     lower.includes('load failed')
   ) {
     return new ServiceError(
-      'Reality Estates could not connect to the server. Please check your internet connection and try again.',
+      'TYGA ESTATES could not connect to the server. Please check your internet connection and try again.',
       'NETWORK_ERROR',
       503
     );
@@ -223,7 +223,7 @@ function mapProfileAndAuthToUser(
     profile?.full_name ||
     (typeof metadata.name === 'string' ? metadata.name : '') ||
     (typeof metadata.full_name === 'string' ? metadata.full_name : '') ||
-    (authUser.email ? authUser.email.split('@')[0] : 'Reality Estates User');
+    (authUser.email ? authUser.email.split('@')[0] : 'TYGA ESTATES User');
 
   const resolvedEmail = profile?.email || authUser.email || '';
 

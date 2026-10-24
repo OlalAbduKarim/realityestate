@@ -97,13 +97,13 @@ export const AdminView: React.FC = () => {
             Admin Operations Desk
           </h1>
           <p className="text-sm text-stone-600 dark:text-stone-400 mb-6 leading-relaxed">
-            Access to property verification, field inspection audits, and transaction pipelines requires an authorized Reality Estates Admin account.
+            Access to property verification, field inspection audits, and transaction pipelines requires an authorized TYGA ESTATES Admin account.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             {!isAuthenticated ? (
               <button
                 onClick={() => openAuthModal('Sign in with an Admin account to access operations.')}
-                className="px-6 py-3 bg-emerald-900 hover:bg-emerald-800 text-white rounded-xl font-semibold text-sm transition-colors"
+                className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl font-bold text-sm transition-colors shadow-xs cursor-pointer"
               >
                 Sign In as Admin
               </button>
@@ -201,9 +201,9 @@ export const AdminView: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold uppercase tracking-wider mb-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-3">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Reality Estates Operations Desk
+                TYGA ESTATES Operations Desk
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                 Verification, Leads & Deal Pipeline
@@ -236,10 +236,10 @@ export const AdminView: React.FC = () => {
             <div className="bg-stone-800/70 border border-stone-700/80 rounded-2xl p-4">
               <div className="flex items-center justify-between text-stone-400 text-xs font-medium mb-2">
                 <span>New Buyer Enquiries</span>
-                <MessageSquare className="w-4 h-4 text-emerald-400" />
+                <MessageSquare className="w-4 h-4 text-amber-400" />
               </div>
               <p className="text-2xl font-bold text-white">{newEnquiriesCount}</p>
-              <p className="text-xs text-emerald-400 mt-1">{enquiries.length} total enquiries</p>
+              <p className="text-xs text-amber-400 mt-1">{enquiries.length} total enquiries</p>
             </div>
 
             <div className="bg-stone-800/70 border border-stone-700/80 rounded-2xl p-4">
@@ -254,7 +254,7 @@ export const AdminView: React.FC = () => {
             <div className="bg-stone-800/70 border border-stone-700/80 rounded-2xl p-4">
               <div className="flex items-center justify-between text-stone-400 text-xs font-medium mb-2">
                 <span>Closed Commission</span>
-                <DollarSign className="w-4 h-4 text-emerald-400" />
+                <DollarSign className="w-4 h-4 text-amber-400" />
               </div>
               <p className="text-2xl font-bold text-white">{formatUGX(totalRevenue, true)}</p>
               <p className="text-xs text-stone-400 mt-1">Display estimate from closed deals</p>
@@ -269,16 +269,16 @@ export const AdminView: React.FC = () => {
         <div className="bg-white dark:bg-stone-900 rounded-2xl p-2 shadow-sm border border-stone-200/80 dark:border-stone-800 flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setActiveTab('verifications')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'verifications'
-                ? 'bg-emerald-900 text-white shadow-sm'
+                ? 'bg-stone-950 text-amber-400 shadow-sm font-bold border border-stone-800'
                 : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
             Property Verifications
             {pendingVerificationsCount > 0 && (
-              <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500 text-white font-bold">
+              <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500 text-stone-950 font-bold">
                 {pendingVerificationsCount}
               </span>
             )}
@@ -286,13 +286,13 @@ export const AdminView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('enquiries')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'enquiries'
-                ? 'bg-emerald-900 text-white shadow-sm'
+                ? 'bg-stone-950 text-amber-400 shadow-sm font-bold border border-stone-800'
                 : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
             }`}
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare className="w-4 h-4 text-amber-400" />
             Customer Enquiries
             <span className="px-2 py-0.5 text-xs rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
               {enquiries.length}
@@ -301,13 +301,13 @@ export const AdminView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('viewings')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'viewings'
-                ? 'bg-emerald-900 text-white shadow-sm'
+                ? 'bg-stone-950 text-amber-400 shadow-sm font-bold border border-stone-800'
                 : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
             }`}
           >
-            <Calendar className="w-4 h-4" />
+            <Calendar className="w-4 h-4 text-amber-400" />
             Viewing Schedule
             <span className="px-2 py-0.5 text-xs rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
               {viewingRequests.length}
@@ -316,13 +316,13 @@ export const AdminView: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('transactions')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'transactions'
-                ? 'bg-emerald-900 text-white shadow-sm'
+                ? 'bg-stone-950 text-amber-400 shadow-sm font-bold border border-stone-800'
                 : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
             }`}
           >
-            <Briefcase className="w-4 h-4" />
+            <Briefcase className="w-4 h-4 text-amber-400" />
             Deal & Commission Pipeline
             <span className="px-2 py-0.5 text-xs rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
               {transactions.length}
@@ -429,14 +429,49 @@ export const AdminView: React.FC = () => {
                             )}
                           </span>
                         </p>
-                        <p className="text-xs text-stone-500 mt-1">
-                          Submitted by:{' '}
-                          <strong className="text-stone-700 dark:text-stone-300">
-                            {property.advertiser?.name || 'Property Representative'}
-                          </strong>{' '}
-                          ({property.advertiser?.type || 'Agent'}) • Tenure:{' '}
-                          {property.tenure || 'N/A'}
-                        </p>
+                        <div className="mt-1.5 p-2 rounded-lg bg-stone-100/80 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700/60 text-xs space-y-1">
+                          <p className="font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>Confidential Lister / Advertiser (Admin Eyes Only):</span>
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-600 dark:text-stone-300">
+                            <span>
+                              Name: <strong>{property.advertiser?.name || 'Unknown'}</strong> (
+                              {property.advertiser?.type || 'Lister'})
+                            </span>
+                            {property.advertiser?.phone && (
+                              <span>
+                                Phone:{' '}
+                                <a
+                                  href={`tel:${property.advertiser.phone}`}
+                                  className="font-mono text-emerald-700 dark:text-emerald-400 underline"
+                                >
+                                  {property.advertiser.phone}
+                                </a>
+                              </span>
+                            )}
+                            {property.advertiser?.whatsapp && (
+                              <span>
+                                WhatsApp:{' '}
+                                <a
+                                  href={`https://wa.me/${property.advertiser.whatsapp.replace(
+                                    /[^0-9]/g,
+                                    ''
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-mono text-emerald-700 dark:text-emerald-400 underline"
+                                >
+                                  {property.advertiser.whatsapp}
+                                </a>
+                              </span>
+                            )}
+                            {property.advertiser?.agencyName && (
+                              <span>Agency: {property.advertiser.agencyName}</span>
+                            )}
+                            <span>Tenure: {property.tenure || 'N/A'}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -807,6 +842,59 @@ export const AdminView: React.FC = () => {
                   {auditError}
                 </div>
               )}
+
+              {/* Confidential Lister / Property Owner Dossier (Admin Eyes Only) */}
+              <div className="p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-amber-950 dark:text-amber-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>Confidential Lister Record (Admin Eyes Only)</span>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-semibold">
+                    Hidden from Public
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-stone-700 dark:text-stone-300">
+                  <div>
+                    <span className="text-stone-400 block text-[10px]">Registered Name:</span>
+                    <strong className="text-stone-900 dark:text-white">
+                      {selectedPropertyForAudit.advertiser?.name || 'Unspecified'}
+                    </strong>{' '}
+                    ({selectedPropertyForAudit.advertiser?.type || 'Lister'})
+                  </div>
+                  <div>
+                    <span className="text-stone-400 block text-[10px]">Direct Phone:</span>
+                    {selectedPropertyForAudit.advertiser?.phone ? (
+                      <a
+                        href={`tel:${selectedPropertyForAudit.advertiser.phone}`}
+                        className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold underline"
+                      >
+                        {selectedPropertyForAudit.advertiser.phone}
+                      </a>
+                    ) : (
+                      <span className="text-stone-400">None provided</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-stone-400 block text-[10px]">Direct WhatsApp:</span>
+                    {selectedPropertyForAudit.advertiser?.whatsapp ? (
+                      <a
+                        href={`https://wa.me/${selectedPropertyForAudit.advertiser.whatsapp.replace(
+                          /[^0-9]/g,
+                          ''
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold underline"
+                      >
+                        {selectedPropertyForAudit.advertiser.whatsapp}
+                      </a>
+                    ) : (
+                      <span className="text-stone-400">None provided</span>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               {/* 4-Point Verification Checklist */}
               <div>

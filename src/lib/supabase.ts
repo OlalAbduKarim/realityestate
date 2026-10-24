@@ -164,7 +164,7 @@ export function getRequiredSupabaseClient(): SupabaseClient {
   if (!supabase) {
     throw new ServiceError(
       getSupabaseConfigurationError() ||
-        'Reality Estates could not connect to the server. Please check your configuration.',
+        'TYGA ESTATES could not connect to the server. Please check your configuration.',
       'STORAGE_NOT_CONFIGURED',
       503
     );

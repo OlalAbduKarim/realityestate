@@ -90,7 +90,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({ property }
       {/* Crucial Legal Disclaimer */}
       <div className="pt-2 text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed border-t border-stone-100 dark:border-stone-800">
         <p>
-          <strong className="text-stone-700 dark:text-stone-300">Notice to Buyers & Tenants:</strong> Verification information is based on physical inspections and advertiser documentation checks performed by the Reality Estates team. It does not replace independent legal due diligence, cadastral deed search at the Ministry of Lands, or boundary opening by a registered surveyor.
+          <strong className="text-stone-700 dark:text-stone-300">Notice to Buyers & Tenants:</strong> Verification information is based on physical inspections and advertiser documentation checks performed by the TYGA ESTATES team. It does not replace independent legal due diligence, cadastral deed search at the Ministry of Lands, or boundary opening by a registered surveyor.
         </p>
       </div>
 

@@ -837,7 +837,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           prev.map((p) => (p.id === updated.id ? updated : p))
         );
         showToast(
-          'Listing submitted to Reality Estates Verification Desk for review.',
+          'Listing submitted to TYGA ESTATES Verification Desk for review.',
           'success'
         );
         return updated;
@@ -1198,7 +1198,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAuthStatus('authenticated');
         await syncUserScopedData(session.user);
         showToast(
-          `Welcome to Reality Estates, ${session.user.name}!`,
+          `Welcome to TYGA ESTATES, ${session.user.name}!`,
           'success'
         );
 

@@ -45,7 +45,7 @@ export const AuthCallbackView: React.FC = () => {
       if (!isSupabaseConfigured()) {
         if (!isCancelled) {
           setStatus('error');
-          setErrorMessage('Reality Estates authentication backend is currently unreachable.');
+          setErrorMessage('TYGA ESTATES authentication backend is currently unreachable.');
         }
         return;
       }
@@ -222,7 +222,7 @@ export const AuthCallbackView: React.FC = () => {
         {/* Brand Header */}
         <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-400 mb-6 bg-emerald-50 dark:bg-emerald-950/60 px-3.5 py-1.5 rounded-full border border-emerald-200 dark:border-emerald-800/60">
           <Building2 className="w-4 h-4" />
-          <span>Reality Estates • Account Security</span>
+          <span>TYGA ESTATES • Account Security</span>
         </div>
 
         {/* STATE 1: LOADING */}
@@ -235,7 +235,7 @@ export const AuthCallbackView: React.FC = () => {
               Verifying Your Email
             </h1>
             <p className="text-sm text-stone-600 dark:text-stone-400 max-w-sm mx-auto leading-relaxed">
-              Please wait while Reality Estates securely confirms your account credentials and sets up your session.
+              Please wait while TYGA ESTATES securely confirms your account credentials and sets up your session.
             </p>
           </div>
         )}
@@ -252,7 +252,7 @@ export const AuthCallbackView: React.FC = () => {
                 Email Confirmed
               </h1>
               <p className="text-sm text-stone-600 dark:text-stone-300 mt-2 max-w-md mx-auto leading-relaxed">
-                Your email has been successfully confirmed. Your Reality Estates account is ready.
+                Your email has been successfully confirmed. Your TYGA ESTATES account is ready.
               </p>
             </div>
 
@@ -277,7 +277,7 @@ export const AuthCallbackView: React.FC = () => {
                     onClick={() => navigateTo('/')}
                     className="w-full sm:w-auto px-6 py-3.5 bg-emerald-900 hover:bg-emerald-800 text-white font-semibold text-sm rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <span>Continue to Reality Estates</span>
+                    <span>Continue to TYGA ESTATES</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                   <button
@@ -294,7 +294,7 @@ export const AuthCallbackView: React.FC = () => {
                     className="w-full sm:w-auto px-7 py-3.5 bg-emerald-900 hover:bg-emerald-800 text-white font-semibold text-sm rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Lock className="w-4 h-4" />
-                    <span>Log in to Reality Estates</span>
+                    <span>Log in to TYGA ESTATES</span>
                   </button>
                   <button
                     onClick={() => navigateTo('/')}
@@ -343,7 +343,7 @@ export const AuthCallbackView: React.FC = () => {
                 className="w-full sm:w-auto px-7 py-3.5 bg-emerald-900 hover:bg-emerald-800 text-white font-semibold text-sm rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Lock className="w-4 h-4" />
-                <span>Log in to Reality Estates</span>
+                <span>Log in to TYGA ESTATES</span>
               </button>
               <button
                 onClick={() => navigateTo('/')}
@@ -367,7 +367,7 @@ export const AuthCallbackView: React.FC = () => {
                 Set a New Password
               </h1>
               <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-                Your reset link was verified. Choose a secure new password for your Reality Estates account.
+                Your reset link was verified. Choose a secure new password for your TYGA ESTATES account.
               </p>
             </div>
 
